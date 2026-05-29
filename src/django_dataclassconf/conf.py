@@ -25,6 +25,15 @@ class PackageConfigLoader:
     """Loads config into multiple dataclasses"""
     def __init__(self):
         self._dataclass_configs: typing.List[BaseConfig] = []
+
+    @property
+    def prefixes(self) -> typing.List[str]:
+        """Provides the list of prefixes available in config loader, excludes empty prefixes"""
+        return [
+            config._prefix 
+            for config in self._dataclass_configs 
+            if config._prefix
+        ]
     
     def subscribe(self, config: BaseConfig):
         if config not in self._dataclass_configs:
