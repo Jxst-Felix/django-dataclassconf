@@ -1,0 +1,50 @@
+[project]
+name = "django_dataclassconf"
+description = "A simple Django package setting loader that utilizes dataclasses for type hinting and type checking"
+authors = [
+    {name = "Felix Leo Flores", email = "floresfelixleo.fleurs96@gmail.com"}
+]
+readme = "README.md"
+license = {text = "MIT"}
+keywords = [
+    "django", "settings",
+    "configuration",
+    "dataclasses",
+    "type-hints",
+]
+classifiers = [
+    "Framework :: Django",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12", 
+    "Programming Language :: Python :: 3.13", 
+]
+requires-python = ">=3.9"
+dependencies = [
+    "Django>=4.2,<6.0",
+    "dacite>=1.8.0",
+]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/Jxst-Felix/django-dataclassconf"
+Issues = "https://github.com/Jxst-Felix/django-dataclassconf/issues"
+
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.dynamic]
+version = { attr = "django_dataclassconf.__version__" }
