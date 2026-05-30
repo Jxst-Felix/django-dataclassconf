@@ -38,7 +38,9 @@ class MyPackageConfig(BaseConfig):
     @property
     def _prefix(self) -> str:
         """
-        Define the config's prefix here, return blank string if it doesn't have a prefix such when we write a configuration dataclass that will hold the `DEBUG` setting
+        Define the config's prefix here, return blank string if it doesn't 
+        have a prefix such as when we write a configuration dataclass that 
+        will hold the `DEBUG` setting
         """
         return 'MY_PACKAGE'
 
@@ -74,7 +76,10 @@ def my_view(request):
     ...
     # Your IDE now natively autocompletes these fields
     if file_size > package_config.MAX_FILE_SIZE:
-        return HttpResponse({'detail': 'File size has exceeded the maximum size limit!'}, status = 400)
+        return HttpResponse(
+            {'detail': 'File size has exceeded the maximum size limit!'}, 
+            status = 400
+        )
 ```
 
 ## Extras
