@@ -2,6 +2,10 @@
 
 # Django DataclassConf
 
+[![PyPI - Version](https://img.shields.io/pypi/v/django-dataclassconf?style=flat-square&logo=pypi&logoColor=white&color=blue)](https://pypi.org/project/django-dataclassconf/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/django-dataclassconf?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/django-dataclassconf/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+
 A simple Django package setting loader that utilizes dataclasses for type hinting and type checking.
 
 Bring modern Python typing, robust validation, and full IDE autocomplete to your Django configurations.
