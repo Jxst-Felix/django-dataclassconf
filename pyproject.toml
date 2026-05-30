@@ -5,7 +5,8 @@ authors = [
     {name = "Felix Leo Flores", email = "floresfelixleo.fleurs96@gmail.com"}
 ]
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
 keywords = [
     "django", "settings",
     "configuration",
