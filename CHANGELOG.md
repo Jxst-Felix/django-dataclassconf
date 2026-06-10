@@ -17,3 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added Configuration loader that loads the settings into configuration dataclasses
 
 ---
+
+## [0.2.0] - 2026-06-11
+
+### Added
+
+- Added `Importable` type annotation for settings that can be imported
+
+### Changed
+
+- `update` method of `BaseConfig` get extra steps in parsing from settings to dataclass configuration to ensure that `Importable` fields are wrapped properly and ready to use
+
+---
