@@ -88,11 +88,13 @@ def my_view(request):
 
 ## Extras
 
+### Nested Dataclasses
+
 Your Configuration Dataclass can also be a nested dataclasses, you only need to inherit `BaseConfig` to the root configuration dataclass.
 
 ```python
 from dataclasses import dataclass, field
-from django_dataclassconf.config import BaseConfig, config_loader
+from django_dataclassconf.conf import BaseConfig, config_loader
 
 @dataclass
 class DocumentPreview:
@@ -122,6 +124,41 @@ MY_PACKAGE = {
         'strip_cover_page': True
     },
 }
+```
+
+### Importables
+
+For settings that includes importing a class, instance, or function from another module, you may type-annotate them via `Importable` from `fields.py`
+
+```python
+from django_dataclassconf.fields import Importable
+import typing
+
+from .models import Segment
+
+@dataclass
+class MyConfig(BaseConfig):
+    SEGMENTER_FUNC: Importable[typing.Callable] = 'myapp.utils.segment_audio'
+    SEGMENT_SERIALIZER_CLASS: Importable[typing.Type[Serializer]] = 'myapp.serializers.SegmentSerializer'
+    SEGMENT_MODEL: Importable[typing.Type[Segment]] = 'myapp.Segment'
+
+configuration = MyConfig()
+```
+
+And to import the expected value, call the `resolve` method:
+
+```python
+# May raise an error if the provided string value is not valid 
+# or if the imported value does not share the same data type as the type annotated
+
+try:
+    segment_model = configuration.SEGMENT_MODEL.resolve()
+
+except ImportError as ie:
+    print(f'Could not import SEGMENT_MODEL: {ie}')
+
+except TypeError as te:
+    print(f'Imported value has different type than expected: {te}')
 ```
 
 ## License
