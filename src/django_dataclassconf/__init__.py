@@ -2,7 +2,7 @@
 Typed, dataclass-based configuration management for Django.
 """
 
-__version__ = '0.2.0'
+__version__ = '0.3.0'
 
 from .conf import BaseConfig, config_loader
 from .fields import (
