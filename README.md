@@ -1,10 +1,8 @@
-<!-- Add badges here later when I have github actions, pypi link, and all -->
-
 # Django DataclassConf
 
 [![PyPI - Version](https://img.shields.io/pypi/v/django-dataclassconf?style=flat-square&logo=pypi&logoColor=white&color=blue)](https://pypi.org/project/django-dataclassconf/)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/django-dataclassconf?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/django-dataclassconf/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
 A simple Django package setting loader that utilizes dataclasses for type hinting and type checking.
 
@@ -30,21 +28,20 @@ Create a file named `config.py` (or any name you prefer tbh) within your applica
 Inherit from `BaseConfig` and define your variables.
 
 ```python
-from dataclasses import dataclass, field
-from django_dataclassconf.config import BaseConfig, config_loader
+from dataclasses import dataclass
+from django_dataclassconf.conf import BaseConfig, config_loader
 
 @dataclass
 class MyPackageConfig(BaseConfig):
     DOCUMENTS_ROOT_PATH: str = '/the/default/path/'
     MAX_FILE_SIZE: int = 10000
-    INDEXER_CLASS: str = 'myapp.utils.DocumentIndexer'
 
     @property
     def _prefix(self) -> str:
         """
-        Define the config's prefix here, return blank string if it doesn't 
-        have a prefix such as when we write a configuration dataclass that 
-        will hold the `DEBUG` setting
+        Define the config's prefix here. Return a blank string if it doesn't
+        have a prefix, such as when writing a configuration dataclass that
+        will hold the `DEBUG` setting.
         """
         return 'MY_PACKAGE'
 
@@ -59,9 +56,9 @@ For your dataclass to grab configuration data from Django's `settings.py` on sta
 # my_app/apps.py
 class MyAppConfig(AppConfig):
     name = 'my_app'
-    
+
     def ready(self):
-        from django_dataclassconf.config import config_loader
+        from django_dataclassconf.conf import config_loader
         from .config import package_config
 
         config_loader.subscribe(package_config)
@@ -69,7 +66,7 @@ class MyAppConfig(AppConfig):
 
 ### 3. Access Your Settings Anywhere
 
-Core Practice would be to import your configuration instance directly instead of using the global `django.conf.settings` object to harness the full type safety and IDE autocomplete.
+The core practice is to import your configuration instance directly instead of using the global `django.conf.settings` object, to get full type safety and IDE autocomplete.
 
 ```python
 # my_app/views.py
@@ -90,7 +87,8 @@ def my_view(request):
 
 ### Nested Dataclasses
 
-Your Configuration Dataclass can also be a nested dataclasses, you only need to inherit `BaseConfig` to the root configuration dataclass.
+Your configuration dataclass can also contain nested dataclasses.
+You only need to inherit `BaseConfig` on the root configuration dataclass.
 
 ```python
 from dataclasses import dataclass, field
@@ -114,7 +112,7 @@ configuration = MyPackageConfig()
 config_loader.subscribe(configuration)
 ```
 
-And it will look like this in `settings.py`
+Which maps to this in `settings.py`:
 
 ```python
 MY_PACKAGE = {
@@ -126,11 +124,14 @@ MY_PACKAGE = {
 }
 ```
 
-### Importables
+## Built-in Field Types
 
-For settings that includes importing a class, instance, or function from another module, you may type-annotate them via `Importable` from `fields.py`
+### Importable
+
+For settings that hold a dotted import path to a class, instance, or callable in another module, annotate them with `Importable` from `fields.py`. The import is deferred — nothing is resolved until you explicitly call `.resolve()`.
 
 ```python
+from dataclasses import dataclass
 from django_dataclassconf.fields import Importable
 import typing
 
@@ -145,12 +146,11 @@ class MyConfig(BaseConfig):
 configuration = MyConfig()
 ```
 
-And to import the expected value, call the `resolve` method:
+Call `.resolve()` when you need the actual object. It validates the type on first call and caches the result:
 
 ```python
-# May raise an error if the provided string value is not valid 
-# or if the imported value does not share the same data type as the type annotated
-
+# Raises ImportError if the path is invalid, or TypeError if the
+# resolved object does not match the annotated type.
 try:
     segment_model = configuration.SEGMENT_MODEL.resolve()
 
@@ -161,6 +161,165 @@ except TypeError as te:
     print(f'Imported value has different type than expected: {te}')
 ```
 
+## Custom Field Types
+
+*Introduced in version 0.3.0.*
+
+You can define your own field types with custom validation and transformation logic by subclassing three base classes from `fields.py`: `FieldValue`, `FieldGeneric`, and `Field`.
+
+Each custom field type requires three pieces:
+
+* **`FieldValue` subclass** — holds the raw value, implements `validate()` (raises on invalid input) and `resolve()` (returns the final value).
+* **`FieldGeneric` subclass** — the runtime object produced by `YourField[T]`. Implements `instanciate()` to construct the `FieldValue`.
+* **`Field` subclass** — the annotation class used in dataclass definitions. Points at the `FieldGeneric` via `_generic_class`.
+
+### Simple Example: Email Field
+
+A straightforward validator that checks the value is a valid email address before returning it as a plain string.
+
+```python
+from django_dataclassconf.fields import Field, FieldGeneric, FieldValue
+import typing
+
+
+class EmailValue(FieldValue[str]):
+    def __init__(self, value: str):
+        self.value = value
+
+    def validate(self):
+        if not isinstance(self.value, str) or '@' not in self.value:
+            raise ValueError(f'{self.value!r} is not a valid email address')
+
+    def resolve(self) -> str:
+        self.validate()
+        return self.value
+
+    def __repr__(self):
+        return f'EmailValue({self.value!r})'
+
+    def __eq__(self, other):
+        if isinstance(other, EmailValue):
+            return self.value == other.value
+        return NotImplemented
+
+    def __hash__(self):
+        return hash(self.value)
+
+
+class _EmailGeneric(FieldGeneric['EmailValue']):
+    def __repr__(self):
+        return f'Email[{self.__inner_type__}]'
+
+    def instanciate(self, value: str) -> EmailValue:
+        return EmailValue(value)
+
+
+if typing.TYPE_CHECKING:
+    Email = EmailValue
+
+else:
+    class Email(Field):
+        _generic_class = _EmailGeneric
+```
+
+Use it in your configuration dataclass the same way as any built-in field type:
+
+```python
+@dataclass
+class MyConfig(BaseConfig):
+    ADMIN_EMAIL: Email[str] = 'admin@example.com'
+
+    @property
+    def _prefix(self):
+        return 'MY_APP'
+```
+
+Call `.resolve()` to get the validated value, or check `.is_valid` if you want a boolean without raising:
+
+```python
+# Raises ValueError if the configured value is not a valid email address
+admin_email = my_config.ADMIN_EMAIL.resolve()
+
+# Non-raising check
+if my_config.ADMIN_EMAIL.is_valid:
+    ...
+```
+
+### Advanced Example: Deprecated Field
+
+A field that emits a `DeprecationWarning` when validated, useful for marking settings that are still supported but scheduled for removal.
+
+```python
+from django_dataclassconf.fields import Field, FieldGeneric, FieldValue
+import warnings
+import typing
+
+
+class DeprecatedValue(FieldValue):
+    def __init__(self, value: typing.Any, inner_type: typing.Type[typing.Any]):
+        self.value = value
+        self.inner_type = inner_type
+
+    def validate(self):
+        if not isinstance(self.value, self.inner_type):
+            raise TypeError(
+                f'Instance {self.value} is not of type {self.inner_type.__name__}'
+            )
+        warnings.warn('This setting is deprecated', DeprecationWarning, stacklevel=2)
+
+    def resolve(self):
+        return self.value
+
+    def __repr__(self):
+        return repr(self.value)
+
+    def __eq__(self, other):
+        if isinstance(other, DeprecatedValue):
+            return self.value == other.value and self.inner_type == other.inner_type
+        return NotImplemented
+
+    def __hash__(self):
+        return hash((repr(self.value), repr(self.inner_type)))
+
+
+class _DeprecatedGeneric(FieldGeneric['DeprecatedValue']):
+    def __repr__(self):
+        return f'Deprecated[{self.__inner_type__}]'
+
+    def instanciate(self, value) -> DeprecatedValue:
+        return DeprecatedValue(value, self.__inner_type__)
+
+
+if typing.TYPE_CHECKING:
+    Deprecated = DeprecatedValue
+
+else:
+    class Deprecated(Field):
+        _generic_class = _DeprecatedGeneric
+```
+
+```python
+@dataclass
+class MyConfig(BaseConfig):
+    LEGACY_PATH: Deprecated[str] = '/old/default/path/'
+
+    @property
+    def _prefix(self):
+        return 'MY_APP'
+```
+
+Calling `.validate()` on a `Deprecated` field emits the warning without raising, as long as the value is the correct type:
+
+```python
+import warnings
+
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter('always')
+    my_config.LEGACY_PATH.validate()
+
+# caught[0].category is DeprecationWarning
+```
+
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License — see the LICENSE file for details.
