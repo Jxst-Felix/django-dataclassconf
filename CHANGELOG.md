@@ -29,3 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `update` method of `BaseConfig` get extra steps in parsing from settings to dataclass configuration to ensure that `Importable` fields are wrapped properly and ready to use
 
 ---
+
+## [0.3.0] - 2026-06-26
+
+### Added
+
+- Added the following base class `FieldValue`, `FieldGeneric`, `Field` to enable Library users in creating their own fields with their custom validators
+
+### Changed
+
+- `update` method of `BaseConfig` get extra steps in parsing from settings to dataclass configuration to ensure that fields are wrapped properly with their corresponding `FieldValue` subclasses and ready to use
+
+---
