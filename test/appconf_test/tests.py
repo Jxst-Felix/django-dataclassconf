@@ -151,3 +151,7 @@ class DataclassConfSignalTests(SimpleTestCase):
     def test_importable_value_repr_contains_path(self):
         iv = ImportableValue('appconf_test.config.TestConfig', type[BaseConfig])
         self.assertIn('appconf_test.config.TestConfig', repr(iv))
+
+    def test_field_deprecation_subclass(self):
+        with self.assertWarns(DeprecationWarning):
+            self.config.DEFAULT_PATH.validate()
