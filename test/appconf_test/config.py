@@ -6,6 +6,8 @@ import typing
 from django_dataclassconf.conf import BaseConfig
 from django_dataclassconf.fields import Importable
 
+from .cust_fields import Deprecated
+
 @dataclass
 class Renderer:
     length: int = 256
@@ -15,7 +17,7 @@ class Renderer:
 
 @dataclass
 class TestConfig(BaseConfig):
-    DEFAULT_PATH: str = '/root/default/path/'
+    DEFAULT_PATH: Deprecated[str] = '/root/default/path/'
     MAX_RETRIES: int = 5
     RENDERER: Renderer = field(default_factory = Renderer)
     CONFIG_SUBCLASS: Importable[type[BaseConfig]] = 'appconf_test.config.TestConfig'

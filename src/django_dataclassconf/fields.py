@@ -1,90 +1,416 @@
 """
-Support for lazily imported configuration fields.
-
-Provides the `Importable` type annotation and its runtime
-representation, `ImportableValue`. These allow configuration values to be
-stored as dotted import paths and resolved only when needed.
-
-Supported import formats:
-
+Field system for typed, validated configuration values.
+ 
+This module provides two layers of functionality:
+ 
+**Base classes for custom fields**
+ 
+:class:`FieldValue`, :class:`FieldGeneric`, and :class:`Field` form the
+extension API. Library users subclass these to create their own validated
+or transformed configuration field types.
+ 
+**Built-in importable fields**
+ 
+:class:`ImportableValue` and :data:`Importable` are the concrete
+implementation of lazily resolved dotted import paths, built on top of
+the base classes.
+ 
+Supported import formats for ``Importable`` fields:
+ 
 - Python import paths:
-  `"package.module.ClassName"`
+  ``"package.module.ClassName"``
 - Django model references:
-  `"app_label.ModelName"`
-
-Importable fields are automatically converted from strings into
-`ImportableValue` instances by :func:`resolve_importables`.
+  ``"app_label.ModelName"``
+ 
+Field-annotated dataclass attributes are automatically converted from
+their raw settings values into :class:`FieldValue` instances by
+:func:`resolve_config_fields`, which is called during
+:meth:`~django_dataclassconf.conf.BaseConfig.update`.
 """
 from django.utils.module_loading import import_string
 from django.apps import apps
 
 from dataclasses import fields
 
+from abc import ABC, abstractmethod
 from collections import abc
 import typing
 
 __all__ = [
-    'Importable', 
+    'FieldValue', 
+    'FieldGeneric', 
+    'Field', 
+
+    'is_config_field', 
+    'resolve_config_fields', 
+
     'ImportableValue', 
-    'resolve_importables', 
-    'is_importable',
+    'Importable', 
 ]
+
 
 T = typing.TypeVar('T')
 
-class ImportableValue(typing.Generic[T]):
+class FieldValue(typing.Generic[T], ABC):
+    """
+    Base class for validated, typed configuration field values.
+ 
+    ``FieldValue[T]`` is the runtime wrapper that holds a raw
+    configuration value, validates it, and resolves it to a final
+    Python object of type ``T``.
+ 
+    Subclass ``FieldValue`` to implement custom field behaviour. 
+    Instances are created automatically by the paired
+    :class:`FieldGeneric` subclass during
+    :func:`resolve_config_fields`.
+ 
+    Subclasses must implement:
+ 
+    - :meth:`validate` — raise on invalid input.
+    - :meth:`resolve` — return the final value of type ``T``.
+    - :meth:`__repr__`
+    - :meth:`__eq__`
+    - :meth:`__hash__`
+ 
+    The concrete :attr:`is_valid` property is provided for free and
+    should not normally be overridden.
+    """
+    @abstractmethod
+    def validate(self):
+        """
+        Validate the wrapped value.
+ 
+        Should raise an appropriate exception (e.g. ``ValueError``,
+        ``TypeError``) if the value is invalid. Must not return a
+        meaningful value — callers that need a boolean result should use
+        :attr:`is_valid` instead.
+ 
+        Raises
+        ------
+        Exception
+            Any exception type that signals an invalid value. The exact
+            type is left to the subclass.
+        """
+        ...
+
+    @property
+    def is_valid(self) -> bool:
+        """Return ``True`` if :meth:`validate` passes without raising."""
+        try:
+            self.validate()
+            return True
+
+        except Exception:
+            return False
+
+    @abstractmethod
+    def resolve(self) -> T:
+        """
+        Validate and return the final configuration value.
+ 
+        Implementations should call :meth:`validate` and then return the
+        resolved value of type ``T``. The resolved value may differ from
+        the raw input (e.g. a ``Path`` field may accept a ``str`` and
+        return a :class:`pathlib.Path`).
+ 
+        Raises
+        ------
+        Exception
+            Any exception raised by :meth:`validate`.
+        """
+        ...
+
+    @abstractmethod
+    def __repr__(self):
+        ...
+
+    @abstractmethod
+    def __eq__(self, value) -> bool:
+        ...
+
+    @abstractmethod
+    def __hash__(self):
+        ...
+
+
+FV = typing.TypeVar('FV', bound = FieldValue)
+
+class FieldGeneric(typing.Generic[FV], ABC):
+    """
+    Runtime representation of a parameterised :class:`Field` annotation.
+ 
+    Instances of ``FieldGeneric`` subclasses are produced by
+    ``Field.__class_getitem__`` and stored as
+    the ``type`` of a dataclass field. They carry the inner type
+    parameter and know how to construct the appropriate
+    :class:`FieldValue` instance for a raw value.
+ 
+    ``FieldGeneric`` subclasses are internal to each field
+    implementation and should not be instantiated directly by users.
+ 
+    Subclasses must implement:
+ 
+    - :meth:`instanciate` — wrap a raw value in the paired
+      :class:`FieldValue` subclass.
+    - :meth:`__repr__`
+ 
+    The ``__instancecheck__`` hook always returns ``True`` so that
+    ``dacite`` accepts :class:`FieldValue` instances as valid for
+    fields annotated with a ``FieldGeneric`` alias.
+ 
+    If a subclass requires no extra state beyond the inner type, it can
+    rely on the inherited :meth:`__init__` without defining its own.
+    """
+    def __init__(self, inner_type: typing.Any):
+        self.__inner_type__: typing.Any = inner_type
+        self.__origin__: typing.Any = None
+
+    def __instancecheck__(self, instance):
+        return True
+
+    @abstractmethod
+    def __repr__(self):
+        ...
+
+    @abstractmethod
+    def instanciate(self, value: typing.Any) -> FV:
+        """
+        Wrap a raw configuration value in the paired FieldValue subclass.
+ 
+        Called by :func:`resolve_config_fields` for every field whose
+        type annotation is an instance of this ``FieldGeneric``.
+ 
+        Parameters
+        ----------
+        value:
+            The raw value read from Django settings.
+ 
+        Returns
+        -------
+        FV
+            A :class:`FieldValue` instance wrapping ``value``.
+        """
+        ...
+
+
+class Field(ABC):
+    """
+    Base class for dataclass field type annotations backed by
+    :class:`FieldValue`.
+ 
+    ``Field`` subclasses are used purely as type annotations in
+    dataclass definitions. They are never instantiated at runtime.
+    Parameterising a subclass (e.g. ``EmailField[str]``) returns a
+    :class:`FieldGeneric` instance that ``dacite`` and
+    :func:`resolve_config_fields` use to construct the appropriate
+    :class:`FieldValue`.
+ 
+    To create a custom field type, define three classes:
+ 
+    1. A :class:`FieldValue` subclass with the validation and resolution
+       logic.
+    2. A :class:`FieldGeneric` subclass whose :meth:`~FieldGeneric.instanciate`
+       constructs the ``FieldValue``.
+    3. A ``Field`` subclass with ``_generic_class`` pointing at the
+       ``FieldGeneric`` subclass.
+ 
+    ``_generic_class`` is validated at subclass definition time via
+    :meth:`__init_subclass__`, so configuration errors are caught as
+    early as possible.
+ 
+    Example
+    -------
+    ::
+
+        if typing.TYPE_CHECKING:
+            Email = EmailValue
+
+        else:
+            class Email(Field):
+                _generic_class = _EmailGeneric
+ 
+        @dataclass
+        class MyConfig(BaseConfig):
+            ADMIN_EMAIL: Email[str] = 'admin@example.com'
+ 
+            @property
+            def _prefix(self):
+                return 'MYAPP'
+ 
+    Raises
+    ------
+    TypeError
+        If a subclass does not set ``_generic_class`` to a
+        :class:`FieldGeneric` subclass, either at class definition time
+        or when the annotation is parameterised.
+    """
+
+    _generic_class: typing.Type[FieldGeneric] = None
+
+    def __class_getitem__(cls, item: typing.Any) -> FieldGeneric:
+        cls._validate()
+        alias = cls._generic_class(item)
+        alias.__origin__ = cls
+        return alias
+    
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls._validate()
+        
+    @classmethod
+    def _validate(cls):
+        """
+        Assert that ``_generic_class`` is a valid :class:`FieldGeneric` subclass.
+ 
+        Called by both :meth:`__init_subclass__` and
+        :meth:`__class_getitem__` to ensure ``_generic_class`` is set
+        correctly before any ``FieldGeneric`` instance is constructed.
+ 
+        Raises
+        ------
+        TypeError
+            If ``_generic_class`` is ``None`` or not a subclass of
+            :class:`FieldGeneric`.
+        """
+        if (
+            cls._generic_class is None or 
+            not issubclass(cls._generic_class, FieldGeneric)
+        ):
+            raise TypeError(f'{cls.__name__}._generic_class must be a subclass of FieldGeneric!')
+
+
+def is_config_field(field_type: typing.Any) -> bool:
+    """
+    Return ``True`` if ``field_type`` is a parameterised :class:`Field` annotation.
+ 
+    A parameterised ``Field`` annotation is an instance of
+    :class:`FieldGeneric`.
+    """
+    return isinstance(field_type, FieldGeneric)
+
+
+def resolve_config_fields(
+    data: typing.Dict[str, typing.Any],
+    config_class: typing.Type,
+) -> typing.Dict[str, typing.Any]:
+    """
+    Wrap raw configuration values in their :class:`FieldValue` instances.
+ 
+    Iterates over the dataclass fields of ``config_class``. For every
+    field whose type annotation is a :class:`FieldGeneric` instance
+    (i.e. a parameterised :class:`Field` subclass), the corresponding
+    raw value in ``data`` is passed to
+    :meth:`FieldGeneric.instanciate` and replaced with the resulting
+    :class:`FieldValue`.
+ 
+    Fields not annotated with a ``Field`` subclass are left unchanged.
+    If a ``Field``-annotated key is absent from ``data``, the dataclass
+    field default is used.
+ 
+    Called internally by
+    :meth:`~django_dataclassconf.conf.BaseConfig.update` before
+    ``dacite`` validates the full configuration dictionary.
+ 
+    Parameters
+    ----------
+    data:
+        Raw configuration key-value pairs, typically extracted from
+        Django settings.
+    config_class:
+        The dataclass type whose field annotations are inspected.
+ 
+    Returns
+    -------
+    dict
+        A copy of ``data`` with ``Field``-annotated values replaced by
+        :class:`FieldValue` instances.
+    """
+    result = dict(data)
+    for field in fields(config_class):
+        f_type = field.type
+        if not is_config_field(f_type):
+            continue
+
+        if field.name not in result:
+            result[field.name] = field.default
+
+        value = result[field.name]
+        result[field.name] = f_type.instanciate(value)
+    return result
+
+
+class ImportableValue(FieldValue):
     """
     Lazily resolves a dotted import path to a Python object.
 
-    Instances are typically created automatically by
-    :func:`resolve_importables` when a configuration field is annotated
-    with `Importable[T]`.
-
-    The imported object is resolved only when :meth:`resolve` is called
-    and is cached for subsequent lookups.
-
-    Examples
-    --------
-    Import a class::
-
-        value = ImportableValue(
-            "myapp.renderers.CustomRenderer",
-            type[Renderer],
-        )
-
-        renderer_cls = value.resolve()
-
-    Import a Django model::
-
-        value = ImportableValue(
-            "auth.User",
-            type[User],
-        )
-
-        user_model = value.resolve()
+    ``ImportableValue`` is the :class:`FieldValue` implementation for
+    :data:`Importable` fields. It stores a dotted import string and
+    resolves it to the target Python object only when :meth:`resolve` is
+    called, caching the result for subsequent lookups.
+ 
+    Supported import formats:
+ 
+    - Python import paths: ``"package.module.ClassName"``
+    - Django model references: ``"app_label.ModelName"``
     """
     def __init__(self, import_str: str, inner_type: typing.Any):
         self.import_str = import_str
         self.inner_type = inner_type
         self._imported_obj = None
 
-    def _validate_type(self, imported_obj: typing.Any) -> typing.Any:
+    def _perform_import(self):
         """
-        Validates if the imported object matches the expected type.
+        Resolve ``import_str`` to a Python object and cache the result.
+ 
+        Tries :func:`django.apps.apps.get_model` first to support Django
+        model references (``"app_label.ModelName"``). Falls back to
+        :func:`django.utils.module_loading.import_string` for all other
+        dotted paths.
+ 
+        Does nothing if the object has already been imported.
+ 
+        Raises
+        ------
+        ImportError
+            If ``import_string`` cannot locate the target.
+        Exception
+            Any exception raised while importing the target module is
+            propagated unchanged.
+        """
+        if self._imported_obj:
+            return
+        
+        try:
+            self._imported_obj = apps.get_model(self.import_str)
+            
+        except (LookupError, ValueError):
+            self._imported_obj = import_string(self.import_str)
 
-        Validation rules depend on the type parameter supplied to
-        `Importable[T]`:
-
-        - `Importable[type[BaseClass]]` requires the imported object to be
-        a subclass of `BaseClass`.
-        - `Importable[Callable]` requires the imported object to be callable.
-        - Other types are validated using `isinstance()` where possible.
-
+    def validate(self):
+        """
+        Import the target object and verify it matches ``inner_type``.
+ 
+        Calls :meth:`_perform_import` to ensure the object is loaded,
+        then checks it against the type argument supplied to
+        ``Importable[T]``:
+ 
+        - ``Importable[type[BaseClass]]`` — asserts the imported object
+          is a subclass of ``BaseClass``.
+        - ``Importable[Callable]`` — asserts the imported object is
+          callable.
+        - Other types — validated with ``isinstance()`` where possible;
+          uninspectable generic aliases are accepted without error.
+ 
         Raises
         ------
         TypeError
             If the imported object does not satisfy the expected type.
+        ImportError
+            If the import path cannot be resolved (propagated from
+            :meth:`_perform_import`).
         """
+        self._perform_import()
+
         origin = typing.get_origin(self.inner_type)
         args = typing.get_args(self.inner_type)
 
@@ -95,30 +421,27 @@ class ImportableValue(typing.Generic[T]):
                 expected_base = nested_origin
 
             if not (
-                isinstance(imported_obj, type) and 
-                issubclass(imported_obj, expected_base)
+                isinstance(self._imported_obj, type) and 
+                issubclass(self._imported_obj, expected_base)
             ):
                 raise TypeError(
                     f'Resolving {self.import_str}: '
-                    f'expected a subclass of {expected_base} but got {imported_obj}'
+                    f'expected a subclass of {expected_base} but got {self._imported_obj}'
                 )
-            
-            return imported_obj
         
         if any([
             self.inner_type is typing.Callable, 
             self.inner_type is abc.Callable,
             origin is abc.Callable, 
         ]):
-            if not callable(imported_obj):
+            if not callable(self._imported_obj):
                 raise TypeError(
                     f'Resolving {self.import_str}: '
-                    f'expected a callable, but got {type(imported_obj)}'
+                    f'expected a callable, but got {type(self._imported_obj)}'
                 )
-            return imported_obj
         
         try:
-            valid = isinstance(imported_obj, self.inner_type)
+            valid = isinstance(self._imported_obj, self.inner_type)
 
         except TypeError:
             valid = True
@@ -126,21 +449,22 @@ class ImportableValue(typing.Generic[T]):
         if not valid:
             raise TypeError(
                 f'Resolving {self.import_str}: '
-                f'expected a subclass of {self.inner_type} but got {type(imported_obj)}'
+                f'expected a subclass of {self.inner_type} but got {type(self._imported_obj)}'
             )
-        return imported_obj
+        ...
 
-    def resolve(self) -> T:
+    def resolve(self):
         """
-        Resolve and return the imported object.
-
-        Django model references are resolved using `apps.get_model()`.
-        All other import paths are resolved using Django's
-        `import_string()`.
-
-        Resolved objects are cached so subsequent calls do not repeat the
-        import operation.
-
+        Validate and return the imported object.
+ 
+        If the object has not been imported yet, calls :meth:`validate`. 
+        Returns the cached object on subsequent calls.
+ 
+        Returns
+        -------
+        object
+            The resolved Python object identified by :attr:`import_str`.
+ 
         Raises
         ------
         ImportError
@@ -148,16 +472,10 @@ class ImportableValue(typing.Generic[T]):
         TypeError
             If the imported object does not match the expected type.
         Exception
-            Any exception raised while importing the target module is
-            propagated unchanged.
+            Any exception raised while importing the target module.
         """
         if not self._imported_obj:
-            try:
-                imported_obj = apps.get_model(self.import_str)
-            except (LookupError, ValueError):
-                imported_obj = import_string(self.import_str)
-
-            self._imported_obj = self._validate_type(imported_obj)
+            self.validate()
         return self._imported_obj
 
     def __str__(self):
@@ -178,87 +496,65 @@ class ImportableValue(typing.Generic[T]):
         return hash((self.import_str, repr(self.inner_type)))
 
 
-class _ImportableGeneric:
+class _ImportableGeneric(FieldGeneric):
     """
-    Runtime representation of `Importable[T]`.
-
-    This internal helper stores the type parameter supplied to
-    `Importable` so it can later be inspected when processing
-    dataclass fields.
-
+    Runtime representation of ``Importable[T]``.
+ 
+    Produced by ``Importable[T]`` at annotation time and stored as the
+    ``type`` of the corresponding dataclass field. Carries the inner
+    type parameter and constructs :class:`ImportableValue` instances
+    during :func:`resolve_config_fields`.
+ 
     Users should not instantiate this class directly.
     """
-    def __init__(self, inner_type: typing.Any) -> None:
-        self.__inner_type__: typing.Any = inner_type
-        self.__origin__: typing.Any = None
-    
-    def __repr__(self) -> str:
+    def __repr__(self):
         return f'Importable[{self.__inner_type__}]'
     
-    def __instancecheck__(self, instance):
-        return True
+    def instanciate(self, value):
+        return ImportableValue(value, self.__inner_type__)
+
+
+class _ImportableField(Field):
+    """
+    Type annotation for lazily imported configuration values.
+ 
+    ``Importable[T]`` declares that a configuration field holds a
+    dotted import path string which, when resolved, yields an object
+    compatible with ``T``.
+ 
+    At runtime ``Importable[T]`` returns an
+    :class:`_ImportableGeneric` instance. Under static type checkers
+    ``Importable`` is aliased to :class:`ImportableValue` so that
+    ``.resolve()`` and other methods are type-checkable.
+ 
+    The raw string is automatically wrapped in an
+    :class:`ImportableValue` by :func:`resolve_config_fields` when
+    the configuration is loaded. The import itself is deferred until
+    :meth:`~ImportableValue.resolve` is called.
+ 
+    Examples
+    --------
+    Import a class::
+ 
+        CONFIG_CLASS: Importable[type[BaseConfig]]
+ 
+    Import an instance::
+ 
+        DEFAULT_RENDERER: Importable[Renderer]
+ 
+    Import a callable::
+ 
+        SERIALIZER: Importable[typing.Callable]
+ 
+    Import a Django model::
+ 
+        USER_MODEL: Importable[type[User]]
+    """
+    _generic_class = _ImportableGeneric
 
 
 if typing.TYPE_CHECKING:
     Importable = ImportableValue
 
 else:
-    class Importable:
-        """
-        Type annotation for lazily imported configuration values.
-
-        `Importable[T]` declares that a configuration field should contain
-        a dotted import path which resolves to an object compatible with
-        `T`.
-
-        Examples
-        --------
-        Import a class::
-
-            CONFIG_CLASS: Importable[type[BaseConfig]]
-
-        Import an instance::
-
-            DEFAULT_RENDERER: Importable[Renderer]
-
-        Import a callable::
-
-            SERIALIZER: Importable[typing.Callable]
-        """
-        def __class_getitem__(cls, item: typing.Any) -> _ImportableGeneric:
-            alias = _ImportableGeneric(item)
-            alias.__origin__ = cls
-            return alias
-
-
-def is_importable(field_type: typing.Any) -> bool:
-    """Determine whether a type annotation is `Importable[T]`."""
-    return isinstance(field_type, _ImportableGeneric)
-
-
-def resolve_importables(
-    data: typing.Dict[str, typing.Any],
-    config_class: typing.Type,
-) -> typing.Dict[str, typing.Any]:
-    """
-    Convert import strings into `ImportableValue` instances.
-
-    For every dataclass field annotated as `Importable[T]`:
-
-    - Missing values are populated from the field default.
-    - String values are wrapped in `ImportableValue`.
-    - Existing `ImportableValue` instances are left unchanged.
-    """
-    result = dict(data)
-    for field in fields(config_class):
-        f_type = field.type
-        if not is_importable(f_type):
-            continue
-
-        if field.name not in result:
-            result[field.name] = field.default
-
-        value = result[field.name]
-        if isinstance(value, str):
-            result[field.name] = ImportableValue(value, f_type.__inner_type__)
-    return result
+    Importable = _ImportableField

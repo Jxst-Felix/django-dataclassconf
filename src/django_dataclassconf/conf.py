@@ -30,7 +30,7 @@ from dataclasses import asdict
 from dacite import from_dict
 import typing
 
-from .fields import resolve_importables
+from .fields import resolve_config_fields
 
 __all__ = [
     'BaseConfig', 
@@ -85,7 +85,7 @@ class BaseConfig(ABC):
         Update the configuration instance from raw configuration data.
 
         Incoming values are merged with the current configuration state,
-        normalized through :func:`resolve_importables`, and validated using
+        normalized through :func:`resolve_config_fields`, and validated using
         `dacite.from_dict()`.
 
         Parameters
@@ -100,8 +100,8 @@ class BaseConfig(ABC):
             dataclass schema.
         """
         previous_data = asdict(self)
-        data_with_imports = resolve_importables(config_data, self.__class__)
-        new_data = {**previous_data, **data_with_imports}
+        data_with_field_types = resolve_config_fields(config_data, self.__class__)
+        new_data = {**previous_data, **data_with_field_types}
         validated_instance = from_dict(
             data_class = self.__class__, 
             data = new_data, 
