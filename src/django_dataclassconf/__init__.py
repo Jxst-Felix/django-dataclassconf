@@ -5,12 +5,29 @@ Typed, dataclass-based configuration management for Django.
 __version__ = '0.2.0'
 
 from .conf import BaseConfig, config_loader
-from .fields import Importable, ImportableValue
+from .fields import (
+    FieldValue, 
+    FieldGeneric, 
+    Field, 
+    is_config_field, 
+    resolve_config_fields, 
+    ImportableValue, 
+    Importable, 
+)
 
 __all__ = [
     "BaseConfig", 
     "config_loader", 
+
+    "FieldValue", 
+    "FieldGeneric", 
+    "Field", 
+
+    "is_config_field", 
+    "resolve_config_fields", 
+
     "Importable", 
     "ImportableValue", 
+
     "__version__",
 ]
