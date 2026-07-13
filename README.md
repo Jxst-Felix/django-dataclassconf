@@ -1,6 +1,6 @@
 # Django DataclassConf
 
-[![CI](https://github.com/Jxst-Felix/django-dataclassconf/actions/workflows/pipeline.yml/badge.svg)](https://github.com/Jxst-Felix/django-dataclassconf/actions/workflows/ci.yml)
+[![CI](https://github.com/Jxst-Felix/django-dataclassconf/actions/workflows/pipeline.yml/badge.svg)](https://github.com/Jxst-Felix/django-dataclassconf/actions/workflows/pipeline.yml)
 [![PyPI - Version](https://img.shields.io/pypi/v/django-dataclassconf?style=flat-square&logo=pypi&logoColor=white&color=blue)](https://pypi.org/project/django-dataclassconf/)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/django-dataclassconf?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/django-dataclassconf/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://opensource.org/licenses/MIT)
