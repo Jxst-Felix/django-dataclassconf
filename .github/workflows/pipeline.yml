@@ -30,7 +30,7 @@ jobs:
       - name: Read local version
         id: local
         run: |
-          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          VERSION=$(python -c "import re; print(re.search(r'__version__\s*=\s*[\"\x27]([^\"\x27]+)[\"\x27]', open('src/django_dataclassconf/__init__.py').read()).group(1))")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Read latest version from PyPI
