@@ -34,18 +34,23 @@ from dataclasses import fields
 
 from abc import ABC, abstractmethod
 from collections import abc
+import pathlib
 import typing
+import os
 
 __all__ = [
-    'FieldValue', 
-    'FieldGeneric', 
-    'Field', 
+    'FieldValue',
+    'FieldGeneric',
+    'Field',
 
-    'is_config_field', 
-    'resolve_config_fields', 
+    'is_config_field',
+    'resolve_config_fields',
 
-    'ImportableValue', 
-    'Importable', 
+    'ImportableValue',
+    'Importable',
+
+    'PathValue',
+    'Path',
 ]
 
 
@@ -558,3 +563,111 @@ if typing.TYPE_CHECKING:
 
 else:
     Importable = _ImportableField
+
+
+class PathValue(FieldValue[pathlib.Path]):
+    """
+    Resolves a raw configuration value into a :class:`pathlib.Path`.
+
+    ``PathValue`` is the :class:`FieldValue` implementation for
+    :data:`Path` fields. It accepts a filesystem path expressed as a
+    ``str`` or :class:`os.PathLike` and resolves it to a
+    :class:`pathlib.Path` object.
+
+    Note
+    ----
+    The public :data:`Path` alias intentionally shadows
+    :class:`pathlib.Path`. Within this module the standard library type
+    is always referred to as ``pathlib.Path`` to avoid confusion.
+    """
+    def __init__(self, value: typing.Any, inner_type: typing.Any):
+        self.value = value
+        self.inner_type = inner_type
+
+    def validate(self):
+        """
+        Verify the wrapped value is path-like.
+
+        Raises
+        ------
+        TypeError
+            If the value is neither a ``str`` nor an :class:`os.PathLike`.
+        """
+        if not isinstance(self.value, (str, os.PathLike)):
+            raise TypeError(
+                f'{self.value!r} is not a valid path (expected str or os.PathLike, '
+                f'got {type(self.value).__name__})'
+            )
+
+    def resolve(self) -> pathlib.Path:
+        """
+        Validate and return the value as a :class:`pathlib.Path`.
+
+        Returns
+        -------
+        pathlib.Path
+            The path constructed from the raw value.
+
+        Raises
+        ------
+        TypeError
+            If the value is not path-like.
+        """
+        self.validate()
+        return pathlib.Path(self.value)
+
+    def __repr__(self):
+        return f'Path({self.value!r})'
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, PathValue):
+            return self.value == other.value
+        return NotImplemented
+
+    def __hash__(self):
+        return hash(self.value)
+
+
+class _PathGeneric(FieldGeneric):
+    """
+    Runtime representation of ``Path[T]``.
+
+    Produced by ``Path[T]`` at annotation time and stored as the ``type``
+    of the corresponding dataclass field. Constructs :class:`PathValue`
+    instances during :func:`resolve_config_fields`.
+
+    Users should not instantiate this class directly.
+    """
+    def __repr__(self):
+        return f'Path[{self.__inner_type__}]'
+
+    def instanciate(self, value):
+        return PathValue(value, self.__inner_type__)
+
+
+class _PathField(Field):
+    """
+    Type annotation for filesystem-path configuration values.
+
+    ``Path[T]`` declares that a configuration field holds a filesystem
+    path (as a ``str`` or :class:`os.PathLike`) which resolves to a
+    :class:`pathlib.Path`.
+
+    At runtime ``Path[T]`` returns a :class:`_PathGeneric` instance.
+    Under static type checkers ``Path`` is aliased to :class:`PathValue`
+    so that ``.resolve()`` is typed as returning :class:`pathlib.Path`.
+
+    Example
+    -------
+    ::
+
+        DOCUMENTS_ROOT: Path[str] = '/the/default/path/'
+    """
+    _generic_class = _PathGeneric
+
+
+if typing.TYPE_CHECKING:
+    Path = PathValue
+
+else:
+    Path = _PathField

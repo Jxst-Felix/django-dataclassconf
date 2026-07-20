@@ -2,9 +2,11 @@ from django.test import SimpleTestCase, override_settings
 from django.contrib.auth.models import User
 
 from django_dataclassconf.conf import BaseConfig, config_loader
-from django_dataclassconf.fields import ImportableValue
+from django_dataclassconf.fields import ImportableValue, PathValue
 
 from dacite.exceptions import WrongTypeError
+
+import pathlib
 
 from appconf_test.config import TestConfig, Test2Config, Renderer, new_as_dict
 from appconf_test.models import UserSubclass
@@ -155,3 +157,46 @@ class DataclassConfSignalTests(SimpleTestCase):
     def test_field_deprecation_subclass(self):
         with self.assertWarns(DeprecationWarning):
             self.config.DEFAULT_PATH.validate()
+
+    def test_path_field_is_path_value_after_subscribe(self):
+        self.assertIsInstance(self.config.MEDIA_ROOT, PathValue)
+
+    def test_path_resolve_returns_pathlib_path(self):
+        resolved = self.config.MEDIA_ROOT.resolve()
+        self.assertIsInstance(resolved, pathlib.Path)
+        self.assertEqual(resolved, pathlib.Path('/root/default/path/'))
+
+    def test_path_override_via_flat_setting(self):
+        with override_settings(TEST_MEDIA_ROOT='/custom/media/root'):
+            self.assertIsInstance(self.config.MEDIA_ROOT, PathValue)
+            self.assertEqual(
+                self.config.MEDIA_ROOT.resolve(),
+                pathlib.Path('/custom/media/root'),
+            )
+        self.assertEqual(
+            self.config.MEDIA_ROOT.resolve(),
+            pathlib.Path('/root/default/path/'),
+        )
+
+    def test_path_value_accepts_os_pathlike(self):
+        pv = PathValue(pathlib.Path('/already/a/path'), str)
+        self.assertTrue(pv.is_valid)
+        self.assertEqual(pv.resolve(), pathlib.Path('/already/a/path'))
+
+    def test_path_value_rejects_non_path_type(self):
+        pv = PathValue(123, str)
+        self.assertFalse(pv.is_valid)
+        with self.assertRaises(TypeError):
+            pv.resolve()
+
+    def test_path_value_equality_and_hash(self):
+        a = PathValue('/a/b', str)
+        b = PathValue('/a/b', str)
+        c = PathValue('/a/c', str)
+        self.assertEqual(a, b)
+        self.assertNotEqual(a, c)
+        self.assertEqual(hash(a), hash(b))
+
+    def test_path_value_repr_contains_value(self):
+        pv = PathValue('/a/b', str)
+        self.assertIn('/a/b', repr(pv))

@@ -4,7 +4,7 @@ from dataclasses import dataclass, asdict, field
 import typing
 
 from django_dataclassconf.conf import BaseConfig
-from django_dataclassconf.fields import Importable
+from django_dataclassconf.fields import Importable, Path
 
 from .cust_fields import Deprecated
 
@@ -24,6 +24,7 @@ class TestConfig(BaseConfig):
     CONFIG_INSTANCE: Importable[BaseConfig] = 'appconf_test.config.configuration'
     USER_MODEL: Importable[type[User]] = 'auth.User'
     DATACLASS_AS_DICT: Importable[typing.Callable] = 'dataclasses.dataclass.asdict'
+    MEDIA_ROOT: Path[str] = '/root/default/path/'
 
     @property
     def _prefix(self):
