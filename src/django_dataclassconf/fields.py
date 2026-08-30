@@ -558,12 +558,6 @@ class _ImportableField(Field):
     _generic_class = _ImportableGeneric
 
 
-if typing.TYPE_CHECKING:
-    Importable = ImportableValue
-
-else:
-    Importable = _ImportableField
-
 
 class PathValue(FieldValue[pathlib.Path]):
     """
@@ -667,7 +661,9 @@ class _PathField(Field):
 
 
 if typing.TYPE_CHECKING:
+    Importable = ImportableValue
     Path = PathValue
 
 else:
+    Importable = _ImportableField
     Path = _PathField
