@@ -161,6 +161,36 @@ except TypeError as te:
     print(f'Imported value has different type than expected: {te}')
 ```
 
+### Path
+
+For settings that hold a filesystem path, annotate them with `Path` from `fields.py`. The raw value may be a `str` or any `os.PathLike`; calling `.resolve()` validates it and returns a `pathlib.Path`.
+
+```python
+from dataclasses import dataclass
+from django_dataclassconf.fields import Path
+
+@dataclass
+class MyConfig(BaseConfig):
+    DOCUMENTS_ROOT: Path[str] = '/the/default/path/'
+
+    @property
+    def _prefix(self):
+        return 'MY_PACKAGE'
+
+configuration = MyConfig()
+```
+
+Call `.resolve()` to get the `pathlib.Path`:
+
+```python
+# Returns pathlib.Path('/the/default/path/')
+root = configuration.DOCUMENTS_ROOT.resolve()
+
+document = root / 'report.pdf'
+```
+
+> **Note:** `Path` intentionally shares its name with `pathlib.Path`. Import it under an alias (e.g. `from django_dataclassconf.fields import Path as PathField`) if you also need `pathlib.Path` in the same module.
+
 ## Custom Field Types
 
 *Introduced in version 0.3.0.*
