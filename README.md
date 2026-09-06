@@ -36,17 +36,12 @@ class MyPackageConfig(BaseConfig):
     DOCUMENTS_ROOT_PATH: str = '/the/default/path/'
     MAX_FILE_SIZE: int = 10000
 
-    @property
-    def _prefix(self) -> str:
-        """
-        Define the config's prefix here. Return a blank string if it doesn't
-        have a prefix, such as when writing a configuration dataclass that
-        will hold the `DEBUG` setting.
-        """
-        return 'MY_PACKAGE'
+    _prefix = 'MY_PACKAGE'
 
 package_config = MyPackageConfig()
 ```
+
+> _**Note:** Make sure to instantiate your config class for it to properly catch the settings and you can then access those settings via its instance._
 
 ### 2. Subscribe to the Configuration Loader
 
@@ -104,9 +99,7 @@ class MyPackageConfig(BaseConfig):
     DOCUMENTS_ROOT_PATH: str = '/the/default/path/'
     PREVIEW: DocumentPreview = field(default_factory=DocumentPreview)
 
-    @property
-    def _prefix(self) -> str:
-        return 'MY_PACKAGE'
+    _prefix = 'MY_PACKAGE'
 
 configuration = MyPackageConfig()
 config_loader.subscribe(configuration)
@@ -128,7 +121,7 @@ MY_PACKAGE = {
 
 ### Importable
 
-For settings that hold a dotted import path to a class, instance, or callable in another module, annotate them with `Importable` from `fields.py`. The import is deferred — nothing is resolved until you explicitly call `.resolve()`.
+For settings that hold a dotted import path to a class, instance, or callable in another module, annotate them with `Importable` from `fields/types.py`. The import is deferred — nothing is resolved until you explicitly call `.resolve()`.
 
 ```python
 from dataclasses import dataclass
@@ -142,6 +135,8 @@ class MyConfig(BaseConfig):
     SEGMENTER_FUNC: Importable[typing.Callable] = 'myapp.utils.segment_audio'
     SEGMENT_SERIALIZER_CLASS: Importable[typing.Type[Serializer]] = 'myapp.serializers.SegmentSerializer'
     SEGMENT_MODEL: Importable[typing.Type[Segment]] = 'myapp.Segment'
+
+    _prefix = 'MY_PACKAGE'
 
 configuration = MyConfig()
 ```
@@ -163,7 +158,7 @@ except TypeError as te:
 
 ### Path
 
-For settings that hold a filesystem path, annotate them with `Path` from `fields.py`. The raw value may be a `str` or any `os.PathLike`; calling `.resolve()` validates it and returns a `pathlib.Path`.
+For settings that hold a filesystem path, annotate them with `Path` from `fields/types.py`. The raw value may be a `str` or any `os.PathLike`; calling `.resolve()` validates it and returns a `pathlib.Path`.
 
 ```python
 from dataclasses import dataclass
@@ -173,9 +168,7 @@ from django_dataclassconf.fields import Path
 class MyConfig(BaseConfig):
     DOCUMENTS_ROOT: Path[str] = '/the/default/path/'
 
-    @property
-    def _prefix(self):
-        return 'MY_PACKAGE'
+    _prefix = 'MY_PACKAGE'
 
 configuration = MyConfig()
 ```
@@ -193,9 +186,20 @@ document = root / 'report.pdf'
 
 ## Custom Field Types
 
-*Introduced in version 0.3.0.*
+_Introduced in version 0.3.0._
 
-You can define your own field types with custom validation and transformation logic by subclassing three base classes from `fields.py`: `FieldValue`, `FieldGeneric`, and `Field`.
+You can define your own field types with custom validation and transformation logic by two ways.
+
+### Decorator
+
+**Introduced in _version 0.5.0_**, a simple way to customize a field type is by using a builder function:
+
+* **`field_type`** — a decorator that automatically subclasses `FieldGeneric` and `Field`.
+* **`create_field_type`** — a function that performs the same thing as `field_type`.
+
+### Subclasses
+
+**Introduced in _version 0.3.0_**, by subclassing three base classes from `fields/bases.py`: `FieldValue`, `FieldGeneric`, and `Field`.
 
 Each custom field type requires three pieces:
 
@@ -203,53 +207,46 @@ Each custom field type requires three pieces:
 * **`FieldGeneric` subclass** — the runtime object produced by `YourField[T]`. Implements `instanciate()` to construct the `FieldValue`.
 * **`Field` subclass** — the annotation class used in dataclass definitions. Points at the `FieldGeneric` via `_generic_class`.
 
-### Simple Example: Email Field
+### Simple Example: Email Field (Decorator)
 
-A straightforward validator that checks the value is a valid email address before returning it as a plain string.
+The simplified way of defining your own field type is by using the `field_type` decorator in `fields/decorators.py`.
 
 ```python
-from django_dataclassconf.fields import Field, FieldGeneric, FieldValue
-import typing
+from django_dataclassconf.fields import field_type, FieldValue
+import re
 
-
-class EmailValue(FieldValue[str]):
-    def __init__(self, value: str):
-        self.value = value
-
+@field_type()
+class Email(FieldValue):
     def validate(self):
-        if not isinstance(self.value, str) or '@' not in self.value:
-            raise ValueError(f'{self.value!r} is not a valid email address')
+        email_pattern = r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+        if not re.match(email_pattern, self.value):
+            raise ValueError(f'Email value {self.value} is not a valid email address')
 
-    def resolve(self) -> str:
-        self.validate()
+    def __str__(self):
         return self.value
 
-    def __repr__(self):
-        return f'EmailValue({self.value!r})'
+    def __eq__(self, value):
+        if isinstance(value, str):
+            return self.value == value
+        return super().__eq__(value)
 
-    def __eq__(self, other):
-        if isinstance(other, EmailValue):
-            return self.value == other.value
-        return NotImplemented
+# Email here serves as FieldValue subclass on static checkers but
+# it is a subclass of Field during runtime
+```
 
-    def __hash__(self):
-        return hash(self.value)
+Alternatively, you may also use the builder function that the decorator uses internally which is `create_field_type` function located in `fields/utils.py`.
 
+```python
+from django_dataclassconf.fields import FieldValue, create_field_type
+import re
 
-class _EmailGeneric(FieldGeneric['EmailValue']):
-    def __repr__(self):
-        return f'Email[{self.__inner_type__}]'
+class EmailValue(FieldValue):
+    ... # implementation here
 
-    def instanciate(self, value: str) -> EmailValue:
-        return EmailValue(value)
+Email = create_field_type(EmailValue, 'Email')
 
-
-if typing.TYPE_CHECKING:
-    Email = EmailValue
-
-else:
-    class Email(Field):
-        _generic_class = _EmailGeneric
+# EmailValue here stays as FieldValue subclass and
+# Email is a subclass of Field
 ```
 
 Use it in your configuration dataclass the same way as any built-in field type:
@@ -259,9 +256,7 @@ Use it in your configuration dataclass the same way as any built-in field type:
 class MyConfig(BaseConfig):
     ADMIN_EMAIL: Email[str] = 'admin@example.com'
 
-    @property
-    def _prefix(self):
-        return 'MY_APP'
+    _prefix = 'MY_APP'
 ```
 
 Call `.resolve()` to get the validated value, or check `.is_valid` if you want a boolean without raising:
@@ -275,9 +270,9 @@ if my_config.ADMIN_EMAIL.is_valid:
     ...
 ```
 
-### Advanced Example: Deprecated Field
+### Advanced Example: Deprecated Field (Subclass)
 
-A field that emits a `DeprecationWarning` when validated, useful for marking settings that are still supported but scheduled for removal.
+A more controlled way to create your custom field type is by subclassing the classes `FieldValue`, `FieldGeneric`, and `Field`. An example will follow which is a field that emits a `DeprecationWarning` when validated, useful for marking settings that are still supported but scheduled for removal.
 
 ```python
 from django_dataclassconf.fields import Field, FieldGeneric, FieldValue
@@ -286,10 +281,6 @@ import typing
 
 
 class DeprecatedValue(FieldValue):
-    def __init__(self, value: typing.Any, inner_type: typing.Type[typing.Any]):
-        self.value = value
-        self.inner_type = inner_type
-
     def validate(self):
         if not isinstance(self.value, self.inner_type):
             raise TypeError(
@@ -297,58 +288,25 @@ class DeprecatedValue(FieldValue):
             )
         warnings.warn('This setting is deprecated', DeprecationWarning, stacklevel=2)
 
-    def resolve(self):
-        return self.value
+# The following subclasses can be customized as much as you like
+class _DeprecatedGeneric(FieldGeneric):
+    _value_class = DeprecatedValue
 
-    def __repr__(self):
-        return repr(self.value)
+    def instantiate(self, value):
+        # you may add anything here
+        return super().instantiate(value)
 
-    def __eq__(self, other):
-        if isinstance(other, DeprecatedValue):
-            return self.value == other.value and self.inner_type == other.inner_type
-        return NotImplemented
-
-    def __hash__(self):
-        return hash((repr(self.value), repr(self.inner_type)))
-
-
-class _DeprecatedGeneric(FieldGeneric['DeprecatedValue']):
-    def __repr__(self):
-        return f'Deprecated[{self.__inner_type__}]'
-
-    def instanciate(self, value) -> DeprecatedValue:
-        return DeprecatedValue(value, self.__inner_type__)
-
+class _DeprecatedField(Field):
+    _generic_class = _DeprecatedGeneric
 
 if typing.TYPE_CHECKING:
     Deprecated = DeprecatedValue
 
 else:
-    class Deprecated(Field):
-        _generic_class = _DeprecatedGeneric
+    Deprecated = _DeprecatedField
 ```
 
-```python
-@dataclass
-class MyConfig(BaseConfig):
-    LEGACY_PATH: Deprecated[str] = '/old/default/path/'
-
-    @property
-    def _prefix(self):
-        return 'MY_APP'
-```
-
-Calling `.validate()` on a `Deprecated` field emits the warning without raising, as long as the value is the correct type:
-
-```python
-import warnings
-
-with warnings.catch_warnings(record=True) as caught:
-    warnings.simplefilter('always')
-    my_config.LEGACY_PATH.validate()
-
-# caught[0].category is DeprecationWarning
-```
+> _**Note:** A convention in naming your custom fields would to name `ObjValue` for subclass of `FieldValue`, `_ObjGeneric` for subclass of `FieldGeneric`, and `_ObjField` for subclass of `Field`. When using the decorator `field_type`, you may name your `FieldValue` subclass without the `..Value` suffix. When using the builder function `create_field_type`, add the `..Value` suffix on the subclass of `FieldValue`._
 
 ## License
 
