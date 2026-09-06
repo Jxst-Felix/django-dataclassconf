@@ -49,3 +49,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added new built-in field typee `Path`.
+
+## [0.5.0] - 2026-09-07
+
+### Added
+
+- Added a decorator (`field_type`) and a builder function (`create_field_type`) to simplify field type customization.
+- Added `_value_class` attribute in `FieldGeneric` for dacite to correctly check instance type.
+
+### Changed
+
+- Simplified Fields API by removing unnecessary abstractmethods in the following base classes: `FieldsValue`, `FieldGeneric`, `BaseConfig`.
+- `_prefix` is now a class attribute in `BaseConfig`.
+- Modularized `fields.py` to its own submodule.
+- Renamed `conf.py` to `core.py`.
+- Corrected misspealled words.
