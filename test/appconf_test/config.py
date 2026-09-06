@@ -3,10 +3,10 @@ from django.contrib.auth.models import User
 from dataclasses import dataclass, asdict, field
 import typing
 
-from django_dataclassconf.conf import BaseConfig
+from django_dataclassconf.core import BaseConfig
 from django_dataclassconf.fields import Importable, Path
 
-from .cust_fields import Deprecated
+from .cust_fields import Deprecated, Email
 
 @dataclass
 class Renderer:
@@ -25,10 +25,9 @@ class TestConfig(BaseConfig):
     USER_MODEL: Importable[type[User]] = 'auth.User'
     DATACLASS_AS_DICT: Importable[typing.Callable] = 'dataclasses.dataclass.asdict'
     MEDIA_ROOT: Path[str] = '/root/default/path/'
+    PROJECT_EMAIL: Email[str] = 'admin_project@domain.com'
 
-    @property
-    def _prefix(self):
-        return 'TEST'
+    _prefix = 'TEST'
 
 
 @dataclass
@@ -36,12 +35,13 @@ class Test2Config(BaseConfig):
     DEFAULT_PATH: str = '/root/default/path/'
     MAX_RETRIES: int = 5
 
-    @property
-    def _prefix(self):
-        return 'TEST'
+    _prefix = 'TEST'
 
 def new_as_dict(*args, **kwargs):
     return asdict(*args, **kwargs)
+
+def foo_bar(x: str) -> bool:
+    return '67' in x.strip()
 
 
 configuration = TestConfig()

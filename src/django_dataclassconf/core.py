@@ -54,10 +54,7 @@ class BaseConfig(ABC):
         @dataclass
         class MyConfig(BaseConfig):
             MAX_RETRIES: int = 5
-
-            @property
-            def _prefix(self):
-                return "MYAPP"
+            _prefix = "MYAPP"
 
     This configuration can then be customized using either::
 
@@ -65,20 +62,9 @@ class BaseConfig(ABC):
 
     or::
 
-        MYAPP_MAX_RETRIES = 10"""
-    @property
-    @abstractmethod
-    def _prefix(self) -> str:
-        """
-        Settings prefix used to load configuration values.
-
-        A prefix of `"TEST"` allows values to be loaded from both
-        `TEST` and `TEST_*` Django settings.
-
-        Returning an empty string disables prefix filtering and causes the
-        configuration to receive the complete settings dictionary.
-        """
-        ...
+        MYAPP_MAX_RETRIES = 10
+    """
+    _prefix: typing.ClassVar[str] = ''
 
     def update(self, config_data: typing.Dict[str, typing.Any]):
         """
