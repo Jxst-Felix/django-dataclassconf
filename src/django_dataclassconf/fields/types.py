@@ -176,6 +176,13 @@ class Path(FieldValue[pathlib.Path]):
     :class:`pathlib.Path`. Within this module the standard library type
     is always referred to as :class:`pathlib.Path` to avoid confusion.
     """
+    def __init__(self, value, inner_type):
+        super().__init__(value, inner_type)
+        self._path_obj: pathlib.Path = None
+
+    def _perform_conversion(self):
+        if self._path_obj is None:
+            self._path_obj = pathlib.Path(self.value)
 
     def validate(self):
         """
@@ -191,6 +198,7 @@ class Path(FieldValue[pathlib.Path]):
                 f'{self.value!r} is not a valid path (expected str or os.PathLike, '
                 f'got {type(self.value).__name__})'
             )
+        self._perform_conversion()
 
     def resolve(self):
         """
@@ -206,14 +214,15 @@ class Path(FieldValue[pathlib.Path]):
         TypeError
             If the value is not path-like.
         """
-        return pathlib.Path(
-            super().resolve()
-        )
+        self.validate()
+        return self._path_obj
 
     def __str__(self):
-        return self.value
+        return str(self.value)
 
     def __eq__(self, value):
-        if isinstance(value, str):
-            return self.value == value
+        if isinstance(value, (str, os.PathLike)):
+            if not self.is_valid:
+                return False
+            return self._path_obj == pathlib.Path(value)
         return super().__eq__(value)
