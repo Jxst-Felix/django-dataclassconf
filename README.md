@@ -29,7 +29,7 @@ Inherit from `BaseConfig` and define your variables.
 
 ```python
 from dataclasses import dataclass
-from django_dataclassconf.conf import BaseConfig, config_loader
+from django_dataclassconf.core import BaseConfig, config_loader
 
 @dataclass
 class MyPackageConfig(BaseConfig):
@@ -53,7 +53,7 @@ class MyAppConfig(AppConfig):
     name = 'my_app'
 
     def ready(self):
-        from django_dataclassconf.conf import config_loader
+        from django_dataclassconf.core import config_loader
         from .config import package_config
 
         config_loader.subscribe(package_config)
@@ -87,7 +87,7 @@ You only need to inherit `BaseConfig` on the root configuration dataclass.
 
 ```python
 from dataclasses import dataclass, field
-from django_dataclassconf.conf import BaseConfig, config_loader
+from django_dataclassconf.core import BaseConfig, config_loader
 
 @dataclass
 class DocumentPreview:
