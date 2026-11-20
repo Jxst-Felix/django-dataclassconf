@@ -48,3 +48,16 @@ where = ["src"]
 
 [tool.setuptools.dynamic]
 version = { attr = "django_dataclassconf.__version__" }
+
+[tool.uv.workspace]
+members = [
+    ".",
+]
+
+[tool.uv.sources]
+django-dataclassconf = { workspace = true, editable = true }
+
+[dependency-groups]
+dev = [
+    "django-dataclassconf",
+]
