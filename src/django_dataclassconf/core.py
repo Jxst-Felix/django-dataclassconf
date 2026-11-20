@@ -25,7 +25,7 @@ When both forms are present, prefixed settings take precedence.
 from django.test.signals import setting_changed
 from django.conf import settings
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import asdict
 from dacite import from_dict
 import typing
@@ -42,7 +42,7 @@ class BaseConfig(ABC):
     Base class for dataclass-backed configuration objects.
 
     Subclasses define configuration fields as dataclass attributes and
-    provide a settings prefix through the :attr:`_prefix` property.
+    provide a settings prefix through the `prefix` property in the :class:`Meta` class.
 
     Registered configuration instances are automatically updated when
     Django settings change.
@@ -54,7 +54,9 @@ class BaseConfig(ABC):
         @dataclass
         class MyConfig(BaseConfig):
             MAX_RETRIES: int = 5
-            _prefix = "MYAPP"
+
+            class Meta:
+                prefix = "MYAPP"
 
     This configuration can then be customized using either::
 
@@ -64,7 +66,57 @@ class BaseConfig(ABC):
 
         MYAPP_MAX_RETRIES = 10
     """
-    _prefix: typing.ClassVar[str] = ''
+    class Meta:
+        """
+        Configuration metadata.
+
+        Attributes:
+            prefix: *(default: `''`)* Namespace prefix for Django settings.
+            use_defaults: *(default: `False`)* Fall back to defaults on validation failure.
+            export_to_config: *(default: `None`)* Override an existing configuration.
+            deprecated: *(default: `[]`)* Settings that should trigger deprecation warnings.
+        """
+        prefix: str = ''
+        # use_defaults: bool = False
+        # export_to_config: object = None
+        deprecated: typing.List[str] = []
+
+    def __post_init__(self):
+        config_loader.subscribe(self)
+
+    def __init_subclass__(cls, *args, **kwargs):
+        super().__init_subclass__(*args, **kwargs)
+        parent_meta = next(
+            (
+                base.__dict__["Meta"]
+                for base in cls.__mro__[1:]
+                if "Meta" in base.__dict__
+            ),
+            BaseConfig.Meta,
+        )
+
+        sub_meta = cls.__dict__.get("Meta")
+        if sub_meta is None:
+            return
+
+        if not isinstance(sub_meta, type):
+            raise TypeError(
+                f"{cls.__name__}.Meta must be a class."
+            )
+
+        inherited_attrs = {
+            k: v
+            for k, v in vars(parent_meta).items()
+            if not k.startswith("_")
+        }
+
+        inherited_attrs.update({
+            k: v
+            for k, v in vars(sub_meta).items()
+            if not k.startswith("_")
+        })
+
+        cls.Meta = type("Meta", (), inherited_attrs)
 
     def update(self, config_data: typing.Dict[str, typing.Any]):
         """
@@ -113,9 +165,9 @@ class PackageConfigLoader:
     def prefixes(self) -> typing.List[str]:
         """Return all registered non-empty configuration prefixes."""
         return [
-            config._prefix 
+            config.Meta.prefix
             for config in self._dataclass_configs 
-            if config._prefix
+            if config.Meta.prefix
         ]
     
     def subscribe(self, config: BaseConfig):
@@ -152,7 +204,7 @@ class PackageConfigLoader:
         If both forms define the same key, the prefixed setting takes
         precedence.
         """
-        prefix = config._prefix
+        prefix = config.Meta.prefix
         if not prefix:
             config.update(config_data)
             return
@@ -182,7 +234,7 @@ class PackageConfigLoader:
         """
         config_data = None
         for config in self._dataclass_configs:
-            prefix = config._prefix
+            prefix = config.Meta.prefix
             prefix_ = f'{prefix}_'
 
             if not prefix or setting == prefix or setting.startswith(prefix_):

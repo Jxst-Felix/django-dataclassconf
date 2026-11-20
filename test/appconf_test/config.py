@@ -27,7 +27,8 @@ class TestConfig(BaseConfig):
     MEDIA_ROOT: Path[str] = '/root/default/path/'
     PROJECT_EMAIL: Email[str] = 'admin_project@domain.com'
 
-    _prefix = 'TEST'
+    class Meta:
+        prefix = 'TEST'
 
 
 @dataclass
@@ -35,7 +36,8 @@ class Test2Config(BaseConfig):
     DEFAULT_PATH: str = '/root/default/path/'
     MAX_RETRIES: int = 5
 
-    _prefix = 'TEST'
+    class Meta:
+        prefix = 'TEST'
 
 def new_as_dict(*args, **kwargs):
     return asdict(*args, **kwargs)

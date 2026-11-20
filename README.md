@@ -36,7 +36,8 @@ class MyPackageConfig(BaseConfig):
     DOCUMENTS_ROOT_PATH: str = '/the/default/path/'
     MAX_FILE_SIZE: int = 10000
 
-    _prefix = 'MY_PACKAGE'
+    class Meta:
+        prefix = 'MY_PACKAGE'
 
 package_config = MyPackageConfig()
 ```
@@ -99,7 +100,8 @@ class MyPackageConfig(BaseConfig):
     DOCUMENTS_ROOT_PATH: str = '/the/default/path/'
     PREVIEW: DocumentPreview = field(default_factory=DocumentPreview)
 
-    _prefix = 'MY_PACKAGE'
+    class Meta:
+        prefix = 'MY_PACKAGE'
 
 configuration = MyPackageConfig()
 config_loader.subscribe(configuration)
@@ -136,7 +138,8 @@ class MyConfig(BaseConfig):
     SEGMENT_SERIALIZER_CLASS: Importable[typing.Type[Serializer]] = 'myapp.serializers.SegmentSerializer'
     SEGMENT_MODEL: Importable[typing.Type[Segment]] = 'myapp.Segment'
 
-    _prefix = 'MY_PACKAGE'
+    class Meta:
+        prefix = 'MY_PACKAGE'
 
 configuration = MyConfig()
 ```
@@ -168,7 +171,8 @@ from django_dataclassconf.fields import Path
 class MyConfig(BaseConfig):
     DOCUMENTS_ROOT: Path[str] = '/the/default/path/'
 
-    _prefix = 'MY_PACKAGE'
+    class Meta:
+        prefix = 'MY_PACKAGE'
 
 configuration = MyConfig()
 ```
@@ -256,7 +260,8 @@ Use it in your configuration dataclass the same way as any built-in field type:
 class MyConfig(BaseConfig):
     ADMIN_EMAIL: Email[str] = 'admin@example.com'
 
-    _prefix = 'MY_APP'
+    class Meta:
+        prefix = 'MY_APP'
 ```
 
 Call `.resolve()` to get the validated value, or check `.is_valid` if you want a boolean without raising:
