@@ -4,21 +4,27 @@
 [![PyPI - Version](https://img.shields.io/pypi/v/django-dataclassconf?style=flat-square&logo=pypi&logoColor=white&color=blue)](https://pypi.org/project/django-dataclassconf/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
-A simple Django package setting loader that utilizes dataclasses for type hinting and type checking.
+A Django configuration management package built around Python dataclasses.
 
-Bring modern Python typing, robust validation, and full IDE autocomplete to your Django configurations.
+`django-dataclassconf` provides a structured and type-aware way to manage Django settings. Instead of accessing configuration through Django's global settings object, you can define dedicated dataclass configurations with explicit fields, defaults, and type annotations.
 
-`django-dataclassconf` allows you to bind your Django settings cleanly to structured standard Python `dataclasses`. Powered by [`dacite`](https://github.com/konradhalas/dacite), it automatically catches dynamic setting updates while ensuring your configuration layer stays type-safe and isolated.
+Powered by [`dacite`](https://github.com/konradhalas/dacite), it handles configuration loading, type validation, and conversion while keeping your settings organized, predictable, and easy to work with.
 
 ## But Why?
 
-* **Fail-Fast Validation:** Catch bad configuration types or missing values instantly during server startup or container deployment rather than hitting silent runtime crashes mid-request.
+- **Structured Configuration**: Organize related settings into dedicated dataclasses instead of relying on scattered references to Django's global settings object.
 
-* **Full IDE Autocomplete:** Say goodbye to blind `getattr(settings, "MY_SETTING")` calls. Enjoy full hovering type definitions and autocompletion in VS Code, PyCharm, and MyPy.
+- **Type Safety and Validation**: Define expected types through Python annotations and validate incoming configuration values, catching invalid settings early.
 
-* **Dual Format Normalization:** Merges flat environment styles (`PREFIX_TIMEOUT = 30`) and structured dictionary blocks (`PREFIX = {"TIMEOUT": 30}`) into a single unified object seamlessly.
+- **IDE Support**: Take advantage of native autocompletion, type information, and static analysis when accessing configuration fields.
 
-* **Test-Safe Isolation:** Fully supports Django's test suite cycles. When settings are overridden dynamically in unit tests, your dataclasses mutate cleanly in-place and revert automatically.
+- **Flexible Configuration Sources**: Support both flat Django settings and dictionary-based configuration blocks, allowing you to organize settings according to your project's needs.
+
+- **Customizable Configuration Behavior**: Use configuration metadata to control settings namespaces, validation fallbacks, external configuration exports, and deprecated settings.
+
+- **Dynamic Settings Updates**: Automatically respond to Django settings changes, including settings overrides during tests, while maintaining the same configuration instances.
+
+- **Extensible Field Types**: Define custom field types with validation and transformation logic, or use built-in types for common configuration values such as import paths and filesystem paths. _(This is currently **WIP** since I'm not able to touch this project much due to academics 🥲)_
 
 ## Usage
 
@@ -79,12 +85,127 @@ def my_view(request):
         )
 ```
 
-## Extras
+## Configuration Metadata
 
-### Nested Dataclasses
+_Introduced in version 0.6.0._
 
-Your configuration dataclass can also contain nested dataclasses.
-You only need to inherit `BaseConfig` on the root configuration dataclass.
+You can customize the behavior of your configuration class by defining an inner `Meta` class. The `Meta` class provides configuration options that control how `BaseConfig` loads, validates, and handles your settings.
+
+```python
+from dataclasses import dataclass
+from django_dataclassconf.core import BaseConfig
+
+@dataclass
+class MyPackageConfig(BaseConfig):
+    MAX_FILE_SIZE: int = 10000
+
+    class Meta:
+        prefix = 'MY_PACKAGE'
+        use_defaults = False
+        export_to_config = None
+        deprecated = []
+```
+
+### Available Options
+
+| Attribute | Default | Description |
+|---|---|---|
+| `prefix` | `''` | The prefix used to identify settings belonging to this configuration. |
+| `use_defaults` | `False` | Whether to fall back to dataclass defaults when incoming settings fail validation. |
+| `export_to_config` | `None` | An optional configuration target where loaded settings will also be exported. |
+| `deprecated` | `[]` | A collection of settings marked as deprecated. |
+
+### Prefix
+
+The `prefix` attribute determines the namespace used when retrieving settings from Django's settings module.
+
+> _This used to be the `_prefix` attribute of the configuration class in earlier versions of **django-dataclassconf**._
+
+For example, with `prefix = 'MY_PACKAGE'`, the configuration loader can retrieve settings from both flat and dictionary-based configurations:
+
+```python
+# settings.py
+
+MY_PACKAGE_MAX_FILE_SIZE = 20000
+
+# Alternatively:
+MY_PACKAGE = {
+    'MAX_FILE_SIZE': 20000,
+}
+```
+
+### Use Defaults
+
+By default, invalid configuration values raise an exception during validation. Setting `use_defaults = True` allows the configuration loader to fall back to the dataclass field's default value when an incoming value fails validation.
+
+```python
+@dataclass
+class MyPackageConfig(BaseConfig):
+    MAX_FILE_SIZE: int = 10000
+    ENABLE_PREVIEWS: bool = True
+
+    class Meta:
+        prefix = 'MY_PACKAGE'
+        use_defaults = True
+```
+
+Given the following Django settings:
+
+```python
+# settings.py
+
+MY_PACKAGE = {
+    'MAX_FILE_SIZE': 'invalid',
+    'ENABLE_PREVIEWS': False,
+}
+```
+
+The resulting configuration will use the default value of `MAX_FILE_SIZE` while retaining the valid value of `ENABLE_PREVIEWS`.
+
+```python
+configuration = MyPackageConfig()
+
+print(configuration.MAX_FILE_SIZE)  # 10000
+print(configuration.ENABLE_PREVIEWS) # False
+```
+
+### Export to Configuration
+
+The `export_to_config` attribute allows loaded settings to be exported to another configuration target. This is useful when integrating with third-party packages that expect their configuration to be available through a separate object or class.
+
+```python
+from rest_framework.settings import api_settings
+
+@dataclass
+class MyPackageConfig(BaseConfig):
+    PAGE_SIZE: int = 20
+
+    class Meta:
+        prefix = 'MY_PACKAGE'
+        export_to_config = api_settings
+```
+
+The configuration loader exports the loaded settings to the specified target after successful validation of the dataclass configuration.
+
+The target may be a dictionary, a class, or an object instance. Exported values are assigned to the corresponding attributes or dictionary keys.
+
+### Deprecated Settings
+
+The `deprecated` attribute allows you to identify settings that are deprecated. This can be used to notify users when they continue to configure settings that are scheduled for removal.
+
+```python
+@dataclass
+class MyPackageConfig(BaseConfig):
+    NEW_SETTING: str = 'default'
+
+    class Meta:
+        prefix = 'MY_PACKAGE'
+        deprecated = ('OLD_SETTING',)
+```
+
+When a deprecated setting is encountered, the configuration loader can issue a deprecation warning to notify users that they should migrate to the replacement setting or stop using the deprecated setting.
+
+
 
 ```python
 from dataclasses import dataclass, field

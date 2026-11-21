@@ -63,4 +63,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `_prefix` is now a class attribute in `BaseConfig`.
 - Modularized `fields.py` to its own submodule.
 - Renamed `conf.py` to `core.py`.
-- Corrected misspealled words.
+- Corrected misspelled words.
+
+## [0.5.1] - 2026-09-07
+
+### Changed
+
+- Fixed the implementation of `Path` and `PathField`
+
+## [0.6.0] - 2026-11-21
+
+### Added
+
+- Supported Meta classes in config classes
+- The use of default values in config fields upon raising wrong type exceptions
+- Injection of settings onto other pre-existing config classes
+- Support for deprecation warnings
