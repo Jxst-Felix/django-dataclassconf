@@ -26,8 +26,9 @@ from django.test.signals import setting_changed
 from django.conf import settings
 
 from abc import ABC
-from dataclasses import asdict
-from dacite import from_dict
+from dataclasses import asdict, fields, MISSING
+from dacite import from_dict, WrongTypeError
+import warnings
 import typing
 
 from .fields import resolve_config_fields
@@ -77,8 +78,8 @@ class BaseConfig(ABC):
             deprecated: *(default: `[]`)* Settings that should trigger deprecation warnings.
         """
         prefix: str = ''
-        # use_defaults: bool = False
-        # export_to_config: object = None
+        use_defaults: bool = False
+        export_to_config: object = None
         deprecated: typing.List[str] = []
 
     def __post_init__(self):
@@ -86,15 +87,6 @@ class BaseConfig(ABC):
 
     def __init_subclass__(cls, *args, **kwargs):
         super().__init_subclass__(*args, **kwargs)
-        parent_meta = next(
-            (
-                base.__dict__["Meta"]
-                for base in cls.__mro__[1:]
-                if "Meta" in base.__dict__
-            ),
-            BaseConfig.Meta,
-        )
-
         sub_meta = cls.__dict__.get("Meta")
         if sub_meta is None:
             return
@@ -104,19 +96,67 @@ class BaseConfig(ABC):
                 f"{cls.__name__}.Meta must be a class."
             )
 
+        parent_meta = next(
+            (
+                base.__dict__["Meta"]
+                for base in cls.__mro__[1:]
+                if "Meta" in base.__dict__
+            ),
+            BaseConfig.Meta,
+        )
+
         inherited_attrs = {
-            k: v
-            for k, v in vars(parent_meta).items()
-            if not k.startswith("_")
+            key: value
+            for key, value in vars(parent_meta).items()
+            if not key.startswith("_")
         }
 
         inherited_attrs.update({
-            k: v
-            for k, v in vars(sub_meta).items()
-            if not k.startswith("_")
+            key: value
+            for key, value in vars(sub_meta).items()
+            if not key.startswith("_")
         })
 
-        cls.Meta = type("Meta", (), inherited_attrs)
+        setattr(cls, "Meta", type("Meta", (), inherited_attrs))
+
+    def _get_instance_with_defaults(
+        self, new_data: typing.Dict[str, typing.Any]
+    ):
+        data = new_data.copy()
+        fallback_fields = set()
+
+        field_map = {
+            field.name: field
+            for field in fields(self.__class__)
+        }
+
+        while True:
+            try:
+                return from_dict(
+                    data_class=self.__class__,
+                    data=data,
+                )
+
+            except WrongTypeError as exc:
+                field_name = exc.field_path
+                if field_name in fallback_fields:
+                    raise
+
+                dataclass_field = field_map.get(field_name)
+                if dataclass_field is None:
+                    raise
+
+                if dataclass_field.default is not MISSING:
+                    default = dataclass_field.default
+
+                elif dataclass_field.default_factory is not MISSING:
+                    default = dataclass_field.default_factory()
+
+                else:
+                    raise
+
+                data[field_name] = default
+                fallback_fields.add(field_name)
 
     def update(self, config_data: typing.Dict[str, typing.Any]):
         """
@@ -137,13 +177,43 @@ class BaseConfig(ABC):
             If the resulting configuration cannot be validated against the
             dataclass schema.
         """
+        deprecated_fields = (
+            set(self.Meta.deprecated) &
+            set(config_data.keys())
+        )
+
+        if deprecated_fields:
+            warnings.warn(
+                message = (
+                    'The following fields are marked as '
+                    f'DEPRECATED: {deprecated_fields}'
+                ),
+                category = DeprecationWarning,
+                stacklevel = 2
+            )
+
         previous_data = asdict(self)
         data_with_field_types = resolve_config_fields(config_data, self.__class__)
         new_data = {**previous_data, **data_with_field_types}
-        validated_instance = from_dict(
-            data_class = self.__class__, 
-            data = new_data, 
+
+        validated_instance = (
+            self._get_instance_with_defaults(
+                new_data = new_data
+            ) if self.__class__.Meta.use_defaults else (
+                from_dict(
+                    data_class = self.__class__, 
+                    data = new_data, 
+                )
+            )
         )
+
+        if self.Meta.export_to_config is not None:
+            for setting, value in new_data.items():
+                setattr(
+                    self.Meta.export_to_config,
+                    setting, value,
+                )
+
         vars(self).update(vars(validated_instance))
 
 
