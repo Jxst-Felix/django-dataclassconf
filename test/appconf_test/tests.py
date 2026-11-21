@@ -1,6 +1,8 @@
 from django.test import SimpleTestCase, override_settings
 from django.contrib.auth.models import User
 
+from rest_framework.settings import api_settings
+
 from django_dataclassconf.core import BaseConfig, config_loader
 from django_dataclassconf.fields import (
     FieldGeneric, 
@@ -10,6 +12,7 @@ from django_dataclassconf.fields import (
     Path,
 )
 
+from dataclasses import dataclass
 from dacite.exceptions import WrongTypeError
 
 import pathlib
@@ -21,9 +24,113 @@ from appconf_test.config import (
     new_as_dict,
     TestConfig,
     Renderer,
+    WithDeprecationConfig,
+    WithExportInstanceConfig,
+    WithDefaultsConfig
 )
 
 from appconf_test.cust_fields import Email, DeprecatedValue
+
+
+class MetaConfigTests(SimpleTestCase):
+    def test_meta_exists_without_explicit_declaration(self):
+        @dataclass
+        class Config(BaseConfig):
+            VALUE: int = 10
+
+        self.assertTrue(hasattr(Config, "Meta"))
+
+    def test_meta_default_values(self):
+        @dataclass
+        class Config(BaseConfig):
+            VALUE: int = 10
+
+        self.assertEqual(Config.Meta.prefix, "")
+
+    def test_meta_overrides_parent(self):
+        @dataclass
+        class ParentConfig(BaseConfig):
+            VALUE: int = 10
+
+            class Meta:
+                prefix = "PARENT"
+
+        @dataclass
+        class ChildConfig(ParentConfig):
+            OTHER: int = 20
+
+            class Meta:
+                prefix = "CHILD"
+
+        self.assertEqual(ChildConfig.Meta.prefix, "CHILD")
+
+    def test_meta_inherits_unspecified_attributes(self):
+        class ParentConfig(BaseConfig):
+            class Meta:
+                prefix = "PARENT"
+                use_defaults = True
+
+        class ChildConfig(ParentConfig):
+            class Meta:
+                prefix = "CHILD"
+
+        self.assertEqual(ChildConfig.Meta.prefix, "CHILD")
+        self.assertTrue(ChildConfig.Meta.use_defaults)
+
+    def test_meta_use_defaults_feature(self):
+        with_defaults_config = WithDefaultsConfig()
+        self.assertTrue(with_defaults_config.Meta.use_defaults)
+        self.assertEqual(with_defaults_config.MAX_RETRIES, 5)
+        self.assertEqual(with_defaults_config.KEEP_ACTIVE, False)
+
+        with override_settings(
+            TEST_DEFAULTS_MAX_RETRIES = 10,
+            TEST_DEFAULTS_KEEP_ACTIVE = True,
+        ):
+            self.assertEqual(with_defaults_config.MAX_RETRIES, 10)
+            self.assertEqual(with_defaults_config.KEEP_ACTIVE, True)
+
+        with override_settings(
+            TEST_DEFAULTS_MAX_RETRIES = "Not an int",
+            TEST_DEFAULTS_KEEP_ACTIVE = "Not a bool",
+        ):
+            self.assertEqual(with_defaults_config.MAX_RETRIES, 5)
+            self.assertEqual(with_defaults_config.KEEP_ACTIVE, False)
+
+    def test_meta_export_to_instance_feature(self):
+        self.assertEqual(api_settings.PAGE_SIZE, None)
+        self.assertEqual(api_settings.SEARCH_PARAM, 'search')
+
+        with_export_instance_config = WithExportInstanceConfig()
+        self.assertEqual(
+            api_settings.PAGE_SIZE,
+            with_export_instance_config.PAGE_SIZE
+        )
+        self.assertEqual(
+            api_settings.SEARCH_PARAM,
+            with_export_instance_config.SEARCH_PARAM
+        )
+
+        with override_settings(
+            REST_FRAMEWORK_PAGE_SIZE = 20,
+            REST_FRAMEWORK_SEARCH_PARAM = 'query'
+        ):
+            self.assertEqual(
+                api_settings.PAGE_SIZE,
+                with_export_instance_config.PAGE_SIZE
+            )
+            self.assertEqual(
+                api_settings.SEARCH_PARAM,
+                with_export_instance_config.SEARCH_PARAM
+            )
+
+    def test_meta_deprecation_feature(self):
+        with_deprecation_config = WithDeprecationConfig()
+        with self.assertWarnsRegex(
+            DeprecationWarning,
+            r'The following fields are marked as DEPRECATED: '
+        ):
+            with_deprecation_config.update({'OLD_RUNTIME_LIMIT': 20})
 
 
 class NativeFieldTests(SimpleTestCase):

@@ -36,6 +36,11 @@ dynamic = ["version"]
 Repository = "https://github.com/Jxst-Felix/django-dataclassconf"
 Issues = "https://github.com/Jxst-Felix/django-dataclassconf/issues"
 
+[project.optional-dependencies]
+test = [
+    "djangorestframework",
+]
+
 [build-system]
 requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -48,3 +53,16 @@ where = ["src"]
 
 [tool.setuptools.dynamic]
 version = { attr = "django_dataclassconf.__version__" }
+
+[tool.uv.workspace]
+members = [
+    ".",
+]
+
+[tool.uv.sources]
+django-dataclassconf = { workspace = true, editable = true }
+
+[dependency-groups]
+dev = [
+    "django-dataclassconf",
+]
