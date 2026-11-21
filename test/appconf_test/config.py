@@ -1,5 +1,7 @@
 from django.contrib.auth.models import User
 
+from rest_framework.settings import api_settings
+
 from dataclasses import dataclass, asdict, field
 import typing
 
@@ -30,6 +32,8 @@ class TestConfig(BaseConfig):
     class Meta:
         prefix = 'TEST'
 
+configuration = TestConfig()
+
 
 @dataclass
 class Test2Config(BaseConfig):
@@ -39,12 +43,43 @@ class Test2Config(BaseConfig):
     class Meta:
         prefix = 'TEST'
 
+configuration2 = Test2Config()
+
+
+@dataclass
+class WithDefaultsConfig(BaseConfig):
+    MAX_RETRIES: int = 5
+    KEEP_ACTIVE: bool = False
+
+    class Meta:
+        prefix = 'TEST_DEFAULTS'
+        use_defaults = True
+
+
+@dataclass
+class WithExportInstanceConfig(BaseConfig):
+    PAGE_SIZE: typing.Optional[int] = 10
+    SEARCH_PARAM: str = 's'
+
+    class Meta:
+        prefix = 'REST_FRAMEWORK'
+        export_to_config = api_settings
+
+
+@dataclass
+class WithDeprecationConfig(BaseConfig):
+    OLD_RUNTIME_LIMIT: int = 5
+    RUNTIME_LIMIT: int = 10
+
+    class Meta:
+        prefix = 'TEST'
+        deprecated = [
+            'OLD_RUNTIME_LIMIT',
+        ]
+
+
 def new_as_dict(*args, **kwargs):
     return asdict(*args, **kwargs)
 
 def foo_bar(x: str) -> bool:
     return '67' in x.strip()
-
-
-configuration = TestConfig()
-configuration2 = Test2Config()
