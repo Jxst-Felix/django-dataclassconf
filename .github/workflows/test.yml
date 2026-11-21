@@ -26,6 +26,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
+          pip install djangorestframework
 
       - name: Run test
         run: |
