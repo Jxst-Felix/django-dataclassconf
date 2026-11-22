@@ -78,6 +78,17 @@ class WithDeprecationConfig(BaseConfig):
         ]
 
 
+@dataclass
+class WithComputedFieldConfig(BaseConfig):
+    WATER_TEMPERATURE: int = 28
+
+    def get_water_temperature(self, value):
+        return max(0, min(100, value))
+
+    class Meta:
+        prefix = 'TEST'
+
+
 def new_as_dict(*args, **kwargs):
     return asdict(*args, **kwargs)
 

@@ -5,10 +5,10 @@ from rest_framework.settings import api_settings
 
 from django_dataclassconf.core import BaseConfig, config_loader
 from django_dataclassconf.fields import (
-    FieldGeneric, 
-    FieldValue, 
-    Importable, 
-    Field, 
+    FieldGeneric,
+    FieldValue,
+    Importable,
+    Field,
     Path,
 )
 
@@ -26,7 +26,8 @@ from appconf_test.config import (
     Renderer,
     WithDeprecationConfig,
     WithExportInstanceConfig,
-    WithDefaultsConfig
+    WithDefaultsConfig,
+    WithComputedFieldConfig,
 )
 
 from appconf_test.cust_fields import Email, DeprecatedValue
@@ -227,6 +228,14 @@ class NativeFieldTests(SimpleTestCase):
         self.assertEqual(path_value, self._create_path_value('/a/b'))
         self.assertNotEqual(path_value, '/a/c')
         self.assertNotEqual(path_value, self._create_path_value('/a/c'))
+
+    def test_with_computed_field_config(self):
+        with_computed_field_config = WithComputedFieldConfig()
+        self.assertEqual(with_computed_field_config.WATER_TEMPERATURE, 28)
+        with override_settings(TEST_WATER_TEMPERATURE = -5):
+            self.assertEqual(with_computed_field_config.WATER_TEMPERATURE, 0)
+        with override_settings(TEST_WATER_TEMPERATURE = 111):
+            self.assertEqual(with_computed_field_config.WATER_TEMPERATURE, 100)
 
 
 class CustomFieldTests(SimpleTestCase):
