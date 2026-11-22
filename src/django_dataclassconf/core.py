@@ -32,7 +32,13 @@ from contextvars import ContextVar
 from abc import ABC
 
 import warnings
-import typing
+from collections.abc import Callable
+from typing import (
+    Dict,
+    List,
+    Set,
+    Any,
+)
 
 from .fields import resolve_config_fields
 
@@ -89,7 +95,7 @@ class BaseConfig(ABC):
         prefix: str = ''
         use_defaults: bool = False
         export_to_config: object = None
-        deprecated: typing.List[str] = []
+        deprecated: List[str] = []
 
     def __post_init__(self):
         self._default_fields = {
@@ -103,7 +109,7 @@ class BaseConfig(ABC):
 
     def __init_subclass__(cls, *args, **kwargs):
         super().__init_subclass__(*args, **kwargs)
-        cls._computed_fields: typing.Dict[str, str] = {
+        cls._computed_fields: Dict[str, str] = {
             name.removeprefix('get_').upper(): name
             for name in dir(cls)
             if name.startswith('get_')
@@ -141,14 +147,12 @@ class BaseConfig(ABC):
 
         setattr(cls, "Meta", type("Meta", (), inherited_attrs))
 
-    def _process_computed_fields(self, data: typing.Dict[str, typing.Any]):
+    def _process_computed_fields(self, data: Dict[str, Any]):
         data_copy = data.copy()
         for setting, value in data_copy.items():
             method = self._computed_fields.get(setting, None)
             if method is not None:
-                processor: typing.Callable[
-                    [typing.Any], typing.Any
-                ] = getattr(self, method)
+                processor: Callable[[Any], Any] = getattr(self, method)
                 data_copy[setting] = processor(value)
         return data_copy
 
@@ -175,7 +179,7 @@ class BaseConfig(ABC):
             _internal_construction.reset(token)
 
     def _get_instance_with_defaults(
-        self, data: typing.Dict[str, typing.Any]
+        self, data: Dict[str, Any]
     ):
         fallback_fields = set()
         while True:
@@ -203,7 +207,7 @@ class BaseConfig(ABC):
                 data.update(default)
                 fallback_fields.add(field_name)
 
-    def update(self, config_data: typing.Dict[str, typing.Any]):
+    def update(self, config_data: Dict[str, Any]):
         """
         Update the configuration instance from raw configuration data.
 
@@ -274,17 +278,17 @@ class PackageConfigLoader:
     loader.
     """
     def __init__(self):
-        self._dataclass_configs: typing.List[BaseConfig] = []
+        self._dataclass_configs: List[BaseConfig] = []
 
     @property
-    def prefixes(self) -> typing.List[str]:
+    def prefixes(self) -> Set[str]:
         """Return all registered non-empty configuration prefixes."""
-        return [
+        return set([
             config.Meta.prefix
             for config in self._dataclass_configs 
             if config.Meta.prefix
-        ]
-    
+        ])
+
     def subscribe(self, config: BaseConfig):
         """
         Register a configuration instance with the loader.
@@ -301,7 +305,7 @@ class PackageConfigLoader:
 
     def refresh_config(
         self, config: BaseConfig, 
-        config_data: typing.Dict[str, typing.Any]
+        config_data: Dict[str, Any]
     ):
         """
         Refresh a single configuration instance.
@@ -360,7 +364,7 @@ class PackageConfigLoader:
                     config_data = self._settings_as_dict()
                 self.refresh_config(config, config_data)
 
-    def _settings_as_dict(self) -> typing.Dict[str, typing.Any]:
+    def _settings_as_dict(self) -> Dict[str, Any]:
         """
         Convert Django settings into a plain dictionary.
 
