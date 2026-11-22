@@ -25,7 +25,7 @@ When both forms are present, prefixed settings take precedence.
 from django.test.signals import setting_changed
 from django.conf import settings
 
-from dataclasses import asdict, fields, MISSING
+from dataclasses import fields, MISSING
 from dacite import from_dict, WrongTypeError
 
 from contextvars import ContextVar
@@ -41,6 +41,7 @@ from typing import (
 )
 
 from .fields import resolve_config_fields
+from .utils import _to_config_data
 
 __all__ = [
     'BaseConfig', 
@@ -104,7 +105,7 @@ class BaseConfig(ABC):
         }
 
         if not _internal_construction.get():
-            self.update(asdict(self))
+            self.update(_to_config_data(self))
             config_loader.subscribe(self)
 
     def __init_subclass__(cls, *args, **kwargs):
@@ -241,7 +242,7 @@ class BaseConfig(ABC):
                 stacklevel = 2
             )
 
-        previous_data = asdict(self)
+        previous_data = _to_config_data(self)
         computed_data = self._process_computed_fields(config_data)
         data_with_field_types = resolve_config_fields(computed_data, self.__class__)
         new_data = {**previous_data, **data_with_field_types}
@@ -340,7 +341,7 @@ class PackageConfigLoader:
 
         config_dict = config_data.get(prefix, {})
         if isinstance(config_dict, config.__class__):
-            config_dict = asdict(config_dict)
+            config_dict = _to_config_data(config_dict)
 
         elif not isinstance(config_dict, dict):
             config_dict = {}
