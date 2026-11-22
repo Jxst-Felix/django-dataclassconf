@@ -26,6 +26,14 @@ Powered by [`dacite`](https://github.com/konradhalas/dacite), it handles configu
 
 - **Extensible Field Types**: Define custom field types with validation and transformation logic, or use built-in types for common configuration values such as import paths and filesystem paths. _(This is currently **WIP** since I'm not able to touch this project much due to academics 🥲)_
 
+## Installation
+
+To use _django-dataclassconf_, you can install it via **pip**:
+
+```shell
+pip install django-dataclassconf
+```
+
 ## Usage
 
 ### 1. Define Your Configuration Dataclass
@@ -51,6 +59,8 @@ package_config = MyPackageConfig()
 > _**Note:** Make sure to instantiate your config class for it to properly catch the settings and you can then access those settings via its instance._
 
 ### 2. Subscribe to the Configuration Loader
+
+> _**Note:** This step is optional ever since version **0.6.0** because a self-discovery mechanism was added in `BaseConfig`. You only need to instantiate your dataclass configuration class._
 
 For your dataclass to grab configuration data from Django's `settings.py` on startup and capture updates during tests, subscribe your instance into `config_loader` inside your app's initialization hook:
 
@@ -109,7 +119,7 @@ class MyPackageConfig(BaseConfig):
 ### Available Options
 
 | Attribute | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `prefix` | `''` | The prefix used to identify settings belonging to this configuration. |
 | `use_defaults` | `False` | Whether to fall back to dataclass defaults when incoming settings fail validation. |
 | `export_to_config` | `None` | An optional configuration target where loaded settings will also be exported. |
@@ -205,8 +215,6 @@ class MyPackageConfig(BaseConfig):
 
 When a deprecated setting is encountered, the configuration loader can issue a deprecation warning to notify users that they should migrate to the replacement setting or stop using the deprecated setting.
 
-
-
 ```python
 from dataclasses import dataclass, field
 from django_dataclassconf.core import BaseConfig, config_loader
@@ -240,9 +248,50 @@ MY_PACKAGE = {
 }
 ```
 
-## Built-in Field Types
+## Configuration Fields
 
-### Importable
+### Computed Fields
+
+---
+
+Computed fields allow you to define custom processing logic for individual configuration fields. They are useful when a configuration value needs to be transformed, normalized, or otherwise processed before it is applied to your configuration instance.
+
+To define a computed field, create a method following the `get_FIELDNAME` naming convention, where `FIELDNAME` corresponds to the configuration field's name (case-insensitively).
+
+#### Defining Computed Fields
+
+Consider the following example:
+
+```python
+@dataclass
+class AppConfig(BaseConfig):
+    MAX_RETRIES: int = 5
+    DEBUG: bool = False
+
+    def get_max_retries(self, value: int) -> int:
+        return max(0, value)
+```
+
+The `get_max_retries` method is automatically associated with the `MAX_RETRIES` field. Whenever the field is processed, the method receives its current value and returns the value that will be used by the configuration instance.
+
+For example, if `MAX_RETRIES` is assigned a negative value through Django settings, the computed field ensures that the resulting value is never below zero.
+
+### Considerations
+
+- **Naming convention:** Computed field methods must follow the `get_FIELDNAME` naming convention. The field name is matched without regard to case.
+- **Method signature:** A computed field method should accept the field's current value as its argument and return the processed value.
+- **Field-specific processing:** Each computed field operates on its corresponding field value. It does not automatically receive the entire configuration instance or derive its value from other configuration fields.
+- **Exceptions:** Exceptions raised during processing are propagated through the configuration processing flow. Ensure that your methods handle invalid input appropriately when necessary.
+
+Computed fields provide a convenient way to encapsulate field-specific transformations directly within your configuration class, keeping configuration definitions expressive and their processing logic organized.
+
+> _**Note:** Every return value of computed fields are still subject to type validation and coercion which will be handled automatically by `dacite`._
+
+### Built-in Field Types
+
+---
+
+#### **`Importable`**
 
 For settings that hold a dotted import path to a class, instance, or callable in another module, annotate them with `Importable` from `fields/types.py`. The import is deferred — nothing is resolved until you explicitly call `.resolve()`.
 
@@ -280,7 +329,7 @@ except TypeError as te:
     print(f'Imported value has different type than expected: {te}')
 ```
 
-### Path
+#### **`Path`**
 
 For settings that hold a filesystem path, annotate them with `Path` from `fields/types.py`. The raw value may be a `str` or any `os.PathLike`; calling `.resolve()` validates it and returns a `pathlib.Path`.
 
@@ -309,30 +358,74 @@ document = root / 'report.pdf'
 
 > **Note:** `Path` intentionally shares its name with `pathlib.Path`. Import it under an alias (e.g. `from django_dataclassconf.fields import Path as PathField`) if you also need `pathlib.Path` in the same module.
 
-## Custom Field Types
+### Custom Field Types
+
+---
 
 _Introduced in version 0.3.0._
 
 You can define your own field types with custom validation and transformation logic by two ways.
 
-### Decorator
+#### **Decorator**
 
 **Introduced in _version 0.5.0_**, a simple way to customize a field type is by using a builder function:
 
-* **`field_type`** — a decorator that automatically subclasses `FieldGeneric` and `Field`.
-* **`create_field_type`** — a function that performs the same thing as `field_type`.
+- **`field_type`** — a decorator that automatically subclasses `FieldGeneric` and `Field`.
 
-### Subclasses
+- **`create_field_type`** — a function that performs the same thing as `field_type`.
+
+#### **Subclasses**
 
 **Introduced in _version 0.3.0_**, by subclassing three base classes from `fields/bases.py`: `FieldValue`, `FieldGeneric`, and `Field`.
 
 Each custom field type requires three pieces:
 
-* **`FieldValue` subclass** — holds the raw value, implements `validate()` (raises on invalid input) and `resolve()` (returns the final value).
-* **`FieldGeneric` subclass** — the runtime object produced by `YourField[T]`. Implements `instanciate()` to construct the `FieldValue`.
-* **`Field` subclass** — the annotation class used in dataclass definitions. Points at the `FieldGeneric` via `_generic_class`.
+- **`FieldValue` subclass** — holds the raw value, implements `validate()` (raises on invalid input) and `resolve()` (returns the final value).
+- **`FieldGeneric` subclass** — the runtime object produced by `YourField[T]`. Implements `instanciate()` to construct the `FieldValue`.
+- **`Field` subclass** — the annotation class used in dataclass definitions. Points at the `FieldGeneric` via `_generic_class`.
 
-### Simple Example: Email Field (Decorator)
+## Configuration Field Examples
+
+### Computed Field Examples
+
+Computed fields are particularly useful for applying field-specific rules without having to implement custom logic in the configuration loading process.
+
+#### **Value normalization**
+
+```python
+@dataclass
+class AppConfig(BaseConfig):
+    APP_NAME: str = 'My Application'
+
+    def get_app_name(self, value: str) -> str:
+        return value.strip().lower()
+```
+
+#### **Enforcing value constraints**
+
+```python
+@dataclass
+class AppConfig(BaseConfig):
+    MAX_CONNECTIONS: int = 10
+
+    def get_max_connections(self, value: int) -> int:
+        return max(1, min(value, 100))
+```
+
+#### **Custom transformations**
+
+```python
+@dataclass
+class AppConfig(BaseConfig):
+    ALLOWED_HOSTS: list[str] = None
+
+    def get_allowed_hosts(self, value: list[str]) -> list[str]:
+        return [host.lower().strip() for host in value]
+```
+
+### Custom Field Type Examples
+
+#### **Simple Example: Email Field (Decorator)**
 
 The simplified way of defining your own field type is by using the `field_type` decorator in `fields/decorators.py`.
 
@@ -396,7 +489,7 @@ if my_config.ADMIN_EMAIL.is_valid:
     ...
 ```
 
-### Advanced Example: Deprecated Field (Subclass)
+#### **Advanced Example: Deprecated Field (Subclass)**
 
 A more controlled way to create your custom field type is by subclassing the classes `FieldValue`, `FieldGeneric`, and `Field`. An example will follow which is a field that emits a `DeprecationWarning` when validated, useful for marking settings that are still supported but scheduled for removal.
 

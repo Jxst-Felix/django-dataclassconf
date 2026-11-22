@@ -75,7 +75,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Config class self-discovery upon instantiation of dataclass configuration
 - Supported Meta classes in config classes
 - The use of default values in config fields upon raising wrong type exceptions
 - Injection of settings onto other pre-existing config classes
 - Support for deprecation warnings
+
+## [0.7.0] - 2026-11-22
+
+### Added
+
+- Supported for computed fields
+
+### Changed
+
+- Added a `ContextVar` (`_internal_construction`) in `core.py` to prevent unnecessary config subscription during type validation or coercion.
+- Added utility function to copy a dataclass config.
