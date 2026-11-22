@@ -25,18 +25,34 @@ When both forms are present, prefixed settings take precedence.
 from django.test.signals import setting_changed
 from django.conf import settings
 
-from abc import ABC
-from dataclasses import asdict, fields, MISSING
+from dataclasses import fields, MISSING
 from dacite import from_dict, WrongTypeError
+
+from contextvars import ContextVar
+from abc import ABC
+
 import warnings
-import typing
+from collections.abc import Callable
+from typing import (
+    Dict,
+    List,
+    Set,
+    Any,
+)
 
 from .fields import resolve_config_fields
+from .utils import _to_config_data
 
 __all__ = [
     'BaseConfig', 
     'config_loader',
 ]
+
+
+_internal_construction = ContextVar(
+    'internal_construction',
+    default = False,
+)
 
 class BaseConfig(ABC):
     """
@@ -80,13 +96,26 @@ class BaseConfig(ABC):
         prefix: str = ''
         use_defaults: bool = False
         export_to_config: object = None
-        deprecated: typing.List[str] = []
+        deprecated: List[str] = []
 
     def __post_init__(self):
-        config_loader.subscribe(self)
+        self._default_fields = {
+            field.name: field
+            for field in fields(self.__class__)
+        }
+
+        if not _internal_construction.get():
+            self.update(_to_config_data(self))
+            config_loader.subscribe(self)
 
     def __init_subclass__(cls, *args, **kwargs):
         super().__init_subclass__(*args, **kwargs)
+        cls._computed_fields: Dict[str, str] = {
+            name.removeprefix('get_').upper(): name
+            for name in dir(cls)
+            if name.startswith('get_')
+        }
+
         sub_meta = cls.__dict__.get("Meta")
         if sub_meta is None:
             return
@@ -119,46 +148,67 @@ class BaseConfig(ABC):
 
         setattr(cls, "Meta", type("Meta", (), inherited_attrs))
 
+    def _process_computed_fields(self, data: Dict[str, Any]):
+        data_copy = data.copy()
+        for setting, value in data_copy.items():
+            method = self._computed_fields.get(setting, None)
+            if method is not None:
+                processor: Callable[[Any], Any] = getattr(self, method)
+                data_copy[setting] = processor(value)
+        return data_copy
+
+    def _get_default_value(self, field_name: str):
+        field = self._default_fields.get(field_name, None)
+        if field is None:
+            return MISSING
+        
+        if field.default is not MISSING:
+            return field.default
+
+        if field.default_factory is not MISSING:
+            return field.default_factory()
+        return None
+
+    def _construct_validated_instance(self, data):
+        token = _internal_construction.set(True)
+        try:
+            return from_dict(
+                data_class = self.__class__,
+                data = data,
+            )
+        finally:
+            _internal_construction.reset(token)
+
     def _get_instance_with_defaults(
-        self, new_data: typing.Dict[str, typing.Any]
+        self, data: Dict[str, Any]
     ):
-        data = new_data.copy()
         fallback_fields = set()
-
-        field_map = {
-            field.name: field
-            for field in fields(self.__class__)
-        }
-
         while True:
             try:
-                return from_dict(
-                    data_class=self.__class__,
-                    data=data,
+                return self._construct_validated_instance(
+                    data = data
                 )
 
             except WrongTypeError as exc:
                 field_name = exc.field_path
-                if field_name in fallback_fields:
+                if (
+                    field_name in fallback_fields or
+                    field_name not in self._default_fields.keys()
+                ):
                     raise
 
-                dataclass_field = field_map.get(field_name)
-                if dataclass_field is None:
+                default_value = self._get_default_value(field_name)
+                if default_value is MISSING:
                     raise
 
-                if dataclass_field.default is not MISSING:
-                    default = dataclass_field.default
+                default = {field_name: default_value}
+                if field_name in self._computed_fields:
+                    default = self._process_computed_fields(default)
 
-                elif dataclass_field.default_factory is not MISSING:
-                    default = dataclass_field.default_factory()
-
-                else:
-                    raise
-
-                data[field_name] = default
+                data.update(default)
                 fallback_fields.add(field_name)
 
-    def update(self, config_data: typing.Dict[str, typing.Any]):
+    def update(self, config_data: Dict[str, Any]):
         """
         Update the configuration instance from raw configuration data.
 
@@ -192,17 +242,17 @@ class BaseConfig(ABC):
                 stacklevel = 2
             )
 
-        previous_data = asdict(self)
-        data_with_field_types = resolve_config_fields(config_data, self.__class__)
+        previous_data = _to_config_data(self)
+        computed_data = self._process_computed_fields(config_data)
+        data_with_field_types = resolve_config_fields(computed_data, self.__class__)
         new_data = {**previous_data, **data_with_field_types}
 
         validated_instance = (
             self._get_instance_with_defaults(
-                new_data = new_data
+                data = new_data
             ) if self.__class__.Meta.use_defaults else (
-                from_dict(
-                    data_class = self.__class__, 
-                    data = new_data, 
+                self._construct_validated_instance(
+                    data = new_data
                 )
             )
         )
@@ -229,17 +279,17 @@ class PackageConfigLoader:
     loader.
     """
     def __init__(self):
-        self._dataclass_configs: typing.List[BaseConfig] = []
+        self._dataclass_configs: List[BaseConfig] = []
 
     @property
-    def prefixes(self) -> typing.List[str]:
+    def prefixes(self) -> Set[str]:
         """Return all registered non-empty configuration prefixes."""
-        return [
+        return set([
             config.Meta.prefix
             for config in self._dataclass_configs 
             if config.Meta.prefix
-        ]
-    
+        ])
+
     def subscribe(self, config: BaseConfig):
         """
         Register a configuration instance with the loader.
@@ -247,13 +297,16 @@ class PackageConfigLoader:
         Newly subscribed configurations are immediately populated from the
         current Django settings.
         """
-        if config not in self._dataclass_configs:
+        if not any(
+            subscriber is config
+            for subscriber in self._dataclass_configs
+        ):
             self._dataclass_configs.append(config)
             self.refresh_config(config, self._settings_as_dict())
 
     def refresh_config(
         self, config: BaseConfig, 
-        config_data: typing.Dict[str, typing.Any]
+        config_data: Dict[str, Any]
     ):
         """
         Refresh a single configuration instance.
@@ -288,7 +341,7 @@ class PackageConfigLoader:
 
         config_dict = config_data.get(prefix, {})
         if isinstance(config_dict, config.__class__):
-            config_dict = asdict(config_dict)
+            config_dict = _to_config_data(config_dict)
 
         elif not isinstance(config_dict, dict):
             config_dict = {}
@@ -312,7 +365,7 @@ class PackageConfigLoader:
                     config_data = self._settings_as_dict()
                 self.refresh_config(config, config_data)
 
-    def _settings_as_dict(self) -> typing.Dict[str, typing.Any]:
+    def _settings_as_dict(self) -> Dict[str, Any]:
         """
         Convert Django settings into a plain dictionary.
 
