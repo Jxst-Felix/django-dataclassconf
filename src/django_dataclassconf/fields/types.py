@@ -6,7 +6,7 @@ import pathlib
 import typing
 import os
 
-from .bases import FieldValue
+from .bases import FieldValue, T
 from .decorators import field_type
 
 
@@ -16,7 +16,7 @@ __all__ = [
 ]
 
 @field_type()
-class Importable(FieldValue):
+class Importable(FieldValue[T]):
     """
     Lazily resolves a dotted import path to a Python object.
 
@@ -29,9 +29,10 @@ class Importable(FieldValue):
     - Python import paths: ``"package.module.ClassName"``
     - Django model references: ``"app_label.ModelName"``
     """
-    def __init__(self, value, inner_type):
-        super().__init__(value, inner_type)
-        self._imported_obj = None
+    def __init__(self, value: str, inner_type):
+        self.value = value,
+        self.inner_type = inner_type
+        self._imported_obj: T = None
 
     def _perform_import(self):
         """
@@ -117,17 +118,17 @@ class Importable(FieldValue):
 
         try:
             valid = isinstance(self._imported_obj, self.inner_type)
-        
+
         except TypeError:
             valid = True
-        
+
         if not valid:
             raise TypeError(
                 f'Resolving {self.value}: '
                 f'expected a subclass of {self.inner_type} but got {type(self._imported_obj)}'
             )
 
-    def resolve(self):
+    def resolve(self) -> T:
         """
         Validate and return the imported object.
          
