@@ -62,6 +62,7 @@ def is_config_field(field_type: typing.Any) -> bool:
 def resolve_config_fields(
     data: typing.Dict[str, typing.Any],
     config_class: typing.Type,
+    resolve_fields: bool = False,
 ) -> typing.Dict[str, typing.Any]:
     """
     Wrap raw configuration values in their :class:`FieldValue` instances.
@@ -105,5 +106,9 @@ def resolve_config_fields(
             result[field.name] = field.default
     
         value = result[field.name]
-        result[field.name] = f_type.instantiate(value)
+        field_value = f_type.instantiate(value)
+        if resolve_fields:
+            field_value.resolve()
+
+        result[field.name] = field_value
     return result
