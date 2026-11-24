@@ -48,7 +48,7 @@ class FieldValue(typing.Generic[T], ABC):
             value = type(self)(value, self.inner_type)
         
         meta = getattr(instance, 'Meta', None)
-        if getattr(meta, 'resolve_fields', False):
+        if getattr(meta, 'auto_resolve', False):
             value.resolve()
         instance.__dict__[self._name] = value
 
@@ -58,7 +58,7 @@ class FieldValue(typing.Generic[T], ABC):
 
         value = instance.__dict__[self._name]
         meta = getattr(instance, 'Meta', None)
-        if getattr(meta, 'resolve_fields', False):
+        if getattr(meta, 'auto_resolve', False):
             return value.resolve()
         return value
 

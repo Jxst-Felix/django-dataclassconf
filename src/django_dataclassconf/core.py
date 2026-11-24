@@ -92,13 +92,13 @@ class BaseConfig(ABC):
             use_defaults: *(default: `False`)* Fall back to defaults on validation failure.
             export_to_config: *(default: `None`)* Override an existing configuration.
             deprecated: *(default: `[]`)* Settings that should trigger deprecation warnings.
-            resolve_fields: *(default: False)* Settings of field types will be resolved upon validation.
+            auto_resolve: *(default: False)* Settings of field types will be resolved upon validation.
         """
         prefix: str = ''
         use_defaults: bool = False
         export_to_config: object = None
         deprecated: List[str] = []
-        resolve_fields: bool = False
+        auto_resolve: bool = False
 
     def __post_init__(self):
         self._default_fields = {
@@ -249,7 +249,7 @@ class BaseConfig(ABC):
         data_with_field_types = resolve_config_fields(
             computed_data,
             self.__class__,
-            self.Meta.resolve_fields,
+            self.Meta.auto_resolve,
         )
         new_data = {**previous_data, **data_with_field_types}
 
