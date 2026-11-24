@@ -91,3 +91,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added a `ContextVar` (`_internal_construction`) in `core.py` to prevent unnecessary config subscription during type validation or coercion.
 - Added utility function to copy a dataclass config.
+
+## [0.8.0] - 2026-11-24
+
+### Added
+
+- Added `auto_resolve` setting in Config Meta class which resolves all field types upon start-up
+
+### Changed
+
+- Changed `FieldValue`'s behavior to act as a Descriptor class as well to perform the behavior linked to auto-resolving field types.
+- Corrected the type annotations of field types.

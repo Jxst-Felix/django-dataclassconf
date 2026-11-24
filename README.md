@@ -124,6 +124,7 @@ class MyPackageConfig(BaseConfig):
 | `use_defaults` | `False` | Whether to fall back to dataclass defaults when incoming settings fail validation. |
 | `export_to_config` | `None` | An optional configuration target where loaded settings will also be exported. |
 | `deprecated` | `[]` | A collection of settings marked as deprecated. |
+| `auto_resolve` | `False` | Whether settings that are field types must have a fail-fast behavior. |
 
 ### Prefix
 
@@ -291,6 +292,12 @@ Computed fields provide a convenient way to encapsulate field-specific transform
 
 ---
 
+This package makes use of wrapper classes that transforms a raw input into a desired object for instant use instead of manually converting or transforming the setting value into a workable object.
+
+In general, wrappers doesn't have a fail-fast behavior and its `resolve` method must be called each time the workable object is in demand which might raise an exception if the raw setting value does not pass the validation and conversion/transformation.
+
+For field types to have a fail-fast behavior, set `auto_resolve` to `True` in the meta class of your configuration class.
+
 #### **`Importable`**
 
 For settings that hold a dotted import path to a class, instance, or callable in another module, annotate them with `Importable` from `fields/types.py`. The import is deferred — nothing is resolved until you explicitly call `.resolve()`.
@@ -383,6 +390,34 @@ Each custom field type requires three pieces:
 - **`FieldValue` subclass** — holds the raw value, implements `validate()` (raises on invalid input) and `resolve()` (returns the final value).
 - **`FieldGeneric` subclass** — the runtime object produced by `YourField[T]`. Implements `instanciate()` to construct the `FieldValue`.
 - **`Field` subclass** — the annotation class used in dataclass definitions. Points at the `FieldGeneric` via `_generic_class`.
+
+## Fail-Fast Field Types
+
+Whenever you set the `auto_resolve` attribute to `True` in the Meta class of you configuration class, fail-fast behavior will be enforced in all of the field types in your configuration enabling you to catch exceptions upon instantiation of your configuration class.
+
+```python
+@dataclass
+class MyPackageConfig(BaseConfig):
+    USER_SERIALIZER: Importable[typing.Type[Serializer]] = 'path/to/serializer_class'
+
+    class Meta:
+        prefix = 'MY_PACKAGE'
+        auto_resolve = True
+
+config = MyPackageConfig()
+```
+
+Upon instantiation of your config class, the field type will automatically resolve the raw setting value. Introduced in version _**0.8.0**_, if your `auto_resolve` is `True`, you may access the output of `resolve` method like this:
+
+```python
+config.USER_SERIALIZER # provides the output of `resolve`
+```
+
+Otherwise, if your `auto_resolve` is `False`, you can only access the output of `resolve` method by invoking method.
+
+```python
+config.USER_SERIALIZER.resolve()
+```
 
 ## Configuration Field Examples
 
