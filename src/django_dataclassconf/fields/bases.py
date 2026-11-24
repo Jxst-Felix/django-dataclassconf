@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing_extensions import Self
 import typing
 
 
@@ -35,9 +36,31 @@ class FieldValue(typing.Generic[T], ABC):
     The concrete :attr:`is_valid` property is provided for free and
     should not normally be overridden.
     """
-    def __init__(self, value: T, inner_type: typing.Type[T]):
+    def __init__(self, value, inner_type):
         self.value = value
         self.inner_type = inner_type
+
+    def __set_name__(self, owner, name):
+        self._name = name
+
+    def __set__(self, instance, value):
+        if not isinstance(value, type(self)):
+            value = type(self)(value, self.inner_type)
+        
+        meta = getattr(instance, 'Meta', None)
+        if getattr(meta, 'auto_resolve', False):
+            value.resolve()
+        instance.__dict__[self._name] = value
+
+    def __get__(self, instance, owner) -> typing.Union[Self, T]:
+        if instance is None:
+            return self
+
+        value = instance.__dict__[self._name]
+        meta = getattr(instance, 'Meta', None)
+        if getattr(meta, 'auto_resolve', False):
+            return value.resolve()
+        return value
 
     @abstractmethod
     def validate(self):
@@ -133,9 +156,9 @@ class FieldGeneric(typing.Generic[FV], ABC):
     """
     _value_class: typing.Type[FV]
 
-    def __init__(self, inner_type: typing.Type[typing.Any]):
+    def __init__(self, inner_type):
         self.__inner_type__ = inner_type
-        self.__origin__: typing.Any = None
+        self.__origin__ = None
 
     def __instancecheck__(self, instance):
         return isinstance(instance, self._value_class)
@@ -143,7 +166,7 @@ class FieldGeneric(typing.Generic[FV], ABC):
     def __repr__(self):
         return f'{type(self).__name__}[{self.__inner_type__!r}]'
 
-    def instantiate(self, value: typing.Any) -> FV:
+    def instantiate(self, value) -> FV:
         """
         Wrap a raw configuration value in the paired :class:`FieldValue` subclass.
  
