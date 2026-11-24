@@ -30,7 +30,7 @@ class Importable(FieldValue[T]):
     - Django model references: ``"app_label.ModelName"``
     """
     def __init__(self, value: str, inner_type):
-        self.value = value,
+        self.value = value
         self.inner_type = inner_type
         self._imported_obj: T = None
 
