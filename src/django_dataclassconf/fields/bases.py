@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing_extensions import Self
 import typing
 
 
@@ -45,20 +46,21 @@ class FieldValue(typing.Generic[T], ABC):
     def __set__(self, instance, value):
         if not isinstance(value, type(self)):
             value = type(self)(value, self.inner_type)
-            meta = getattr(instance, 'Meta', None)
-            if getattr(meta, 'resolve_fields', False):
-                value.resolve()
+        
+        meta = getattr(instance, 'Meta', None)
+        if getattr(meta, 'resolve_fields', False):
+            value.resolve()
         instance.__dict__[self._name] = value
 
-    def __get__(self, instance, owner) -> T | typing.Self:
+    def __get__(self, instance, owner) -> typing.Union[Self, T]:
         if instance is None:
             return self
 
+        value = instance.__dict__[self._name]
         meta = getattr(instance, 'Meta', None)
         if getattr(meta, 'resolve_fields', False):
-            value = instance.__dict__[self._name]
             return value.resolve()
-        return self
+        return value
 
     @abstractmethod
     def validate(self):
